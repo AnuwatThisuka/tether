@@ -140,8 +140,12 @@ func EnsureSlot(ctx context.Context, conn *pgconn.PgConn, slotName string) error
 	return fmt.Errorf("wal: create slot: %w", err)
 }
 
-// DropSlot drops a replication slot if present. Used by tests for cleanup.
+// DropSlot drops a replication slot if present. Terminates an active
+// walsender first so an in-process consumer does not pin the slot.
 func DropSlot(ctx context.Context, pool *pgxpool.Pool, slotName string) error {
+	if err := TerminateSlotBackend(ctx, pool, slotName); err != nil {
+		return err
+	}
 	_, err := pool.Exec(ctx, `SELECT pg_drop_replication_slot($1)`, slotName)
 	if err != nil {
 		var pgErr *pgconn.PgError

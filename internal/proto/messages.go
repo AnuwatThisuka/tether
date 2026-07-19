@@ -90,6 +90,7 @@ const (
 	CodeNoHandler      = "no_mutation_handler"
 
 	ReasonSlowClient = "slow_client"
+	ReasonIdleClient = "idle_client"
 	ReasonShutdown   = "shutdown"
 )
 

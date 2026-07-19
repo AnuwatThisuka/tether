@@ -128,6 +128,8 @@ detects a schema change affecting a synced table, it **halts that shape and
 surfaces a loud error**. It will not guess, and it will not silently
 continue with a stale column map.
 
+Host skeleton and operational rules: [docs/embed.md](docs/embed.md).
+
 ---
 
 ## Requirements
@@ -166,7 +168,7 @@ covered by a test, it isn't in this README.
 - [x] Gapless initial snapshot handoff to live stream
 - [x] WebSocket transport with offset-based resume
 - [x] Server-authoritative mutations with idempotency keys
-- [ ] Slot lag guard and schema-drift halt
+- [x] Slot lag guard and schema-drift halt
 
 **v0.2 — operability**
 

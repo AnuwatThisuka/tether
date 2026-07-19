@@ -6,6 +6,11 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Slot lag guard (`MaxSlotLag`, default 2 GiB) and idle client sweep
+  (`MaxClientIdle`, default 24h). Exceeding lag drops the replication slot,
+  broadcasts `must_resnapshot`, clears in-memory streams, and recreates the
+  slot (Invariant 6). Schema-drift shape apply errors are sent to clients as
+  `shape_halted`. Minimal embedder guide in `docs/embed.md`.
 - Server-authoritative mutations (`OnMutation`, `Reject`) with idempotency keys
   stored in `tether.mutation_keys` inside the same transaction as the handler
   (Invariant 3). Wire: `mutation` / `mutation_ok` / `mutation_reject`.

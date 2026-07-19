@@ -3,6 +3,7 @@ package tether
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -30,13 +31,15 @@ type AuthFunc func(*http.Request) (Claims, error)
 type ClaimsKeyFunc func(Claims) string
 
 type options struct {
-	auth         AuthFunc
-	claimsKey    ClaimsKeyFunc
-	clientBuffer int
-	slotName     string
-	publication  string
-	logger       *slog.Logger
-	onMutation   MutationHandler
+	auth          AuthFunc
+	claimsKey     ClaimsKeyFunc
+	clientBuffer  int
+	slotName      string
+	publication   string
+	logger        *slog.Logger
+	onMutation    MutationHandler
+	maxSlotLag    int64
+	maxClientIdle time.Duration
 }
 
 // MutationHandler applies a client mutation inside a host-controlled transaction.
@@ -68,6 +71,19 @@ func WithPublication(name string) Option {
 	return func(o *options) { o.publication = name }
 }
 
+// MaxSlotLag sets the maximum replication slot lag in bytes before the slot
+// is dropped and clients are forced to re-snapshot (Invariant 6).
+// Zero disables the guard. Default is 2 GiB.
+func MaxSlotLag(n int64) Option {
+	return func(o *options) { o.maxSlotLag = n }
+}
+
+// MaxClientIdle sets how long a connected client may be idle before it is
+// disconnected. Zero disables the sweep. Default is 24h.
+func MaxClientIdle(d time.Duration) Option {
+	return func(o *options) { o.maxClientIdle = d }
+}
+
 // Engine is the sync engine handle returned by New.
 type Engine struct {
 	pgURL string
@@ -80,6 +96,9 @@ type Engine struct {
 	pool     *pgxpool.Pool
 	streams  map[string]*shape.Instance // shape\x00claimsKey
 	sessions map[string]*session
+
+	// slotLagOverride, when set (tests), replaces wal.SlotLagBytes.
+	slotLagOverride func(context.Context) (int64, error)
 }
 
 type session struct {
@@ -87,6 +106,21 @@ type session struct {
 	claims Claims
 	resume map[string]int64
 	shapes map[string]struct{}
+
+	mu         sync.Mutex
+	lastActive time.Time
+}
+
+func (s *session) touch() {
+	s.mu.Lock()
+	s.lastActive = time.Now()
+	s.mu.Unlock()
+}
+
+func (s *session) isIdle(cutoff time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastActive.Before(cutoff)
 }
 
 // New constructs an Engine.
@@ -95,11 +129,13 @@ func New(pgURL string, opts ...Option) (*Engine, error) {
 		return nil, fmt.Errorf("tether: pgURL is required")
 	}
 	o := options{
-		clientBuffer: 64,
-		slotName:     "tether_slot",
-		publication:  "tether_pub",
-		logger:       slog.Default(),
-		claimsKey:    func(c Claims) string { return fmt.Sprint(c) },
+		clientBuffer:  64,
+		slotName:      "tether_slot",
+		publication:   "tether_pub",
+		logger:        slog.Default(),
+		claimsKey:     func(c Claims) string { return fmt.Sprint(c) },
+		maxSlotLag:    2 * 1024 * 1024 * 1024, // 2 GiB
+		maxClientIdle: 24 * time.Hour,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -166,10 +202,11 @@ func (e *Engine) serveWS(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	sess := &session{
-		conn:   conn,
-		claims: claims,
-		resume: map[string]int64{},
-		shapes: map[string]struct{}{},
+		conn:       conn,
+		claims:     claims,
+		resume:     map[string]int64{},
+		shapes:     map[string]struct{}{},
+		lastActive: time.Now(),
 	}
 	e.mu.Lock()
 	e.sessions[conn.ID()] = sess
@@ -191,6 +228,7 @@ func (e *Engine) serveWS(w http.ResponseWriter, r *http.Request) {
 			cancel()
 			return
 		}
+		sess.touch()
 		typ, err := proto.UnmarshalType(data)
 		if err != nil {
 			e.sendErr(conn, proto.CodeBadProtocol, err.Error(), "")
@@ -482,6 +520,35 @@ func (e *Engine) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	var lastID int64
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := e.runConsumerCycle(ctx, replURL, tables, ticker, &lastID); err != nil {
+			if errors.Is(err, errRestartConsumer) {
+				continue
+			}
+			return err
+		}
+		return nil
+	}
+}
+
+// errRestartConsumer signals Run to recreate the slot and restart the consumer.
+var errRestartConsumer = errors.New("tether: restart consumer")
+
+func (e *Engine) runConsumerCycle(
+	ctx context.Context,
+	replURL string,
+	tables []wal.TableRef,
+	ticker *time.Ticker,
+	lastID *int64,
+) error {
 	repl, err := pgconn.Connect(ctx, replURL)
 	if err != nil {
 		return fmt.Errorf("tether: replication connect: %w", err)
@@ -496,7 +563,6 @@ func (e *Engine) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("tether: replication reconnect: %w", err)
 	}
-	defer func() { _ = repl.Close(ctx) }()
 
 	consumer, err := wal.NewConsumer(e.pool, repl, wal.Config{
 		ConsumerID:  "tether-engine",
@@ -505,27 +571,138 @@ func (e *Engine) Run(ctx context.Context) error {
 		Tables:      tables,
 	})
 	if err != nil {
+		_ = repl.Close(ctx)
 		return err
 	}
 
-	errCh := make(chan error, 1)
-	go func() { errCh <- consumer.Run(ctx) }()
+	consCtx, consCancel := context.WithCancel(ctx)
+	defer consCancel()
 
-	var lastID int64
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
+	errCh := make(chan error, 1)
+	go func() { errCh <- consumer.Run(consCtx) }()
 
 	for {
 		select {
 		case err := <-errCh:
+			_ = repl.Close(ctx)
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return err
 		case <-ctx.Done():
+			consCancel()
+			<-errCh
+			_ = repl.Close(ctx)
 			return ctx.Err()
 		case <-ticker.C:
-			if err := e.fanOutNewChanges(ctx, &lastID); err != nil {
+			if err := e.fanOutNewChanges(ctx, lastID); err != nil {
 				e.log.Error("tether fanout", "err", err)
 			}
+			e.sweepIdleClients(ctx)
+			if e.opts.maxSlotLag > 0 {
+				lag, err := e.slotLagBytes(ctx)
+				if err != nil {
+					e.log.Error("tether slot lag", "err", err)
+					continue
+				}
+				if lag > e.opts.maxSlotLag {
+					e.log.Error("tether slot lag exceeded",
+						"lag_bytes", lag, "max_bytes", e.opts.maxSlotLag)
+					consCancel()
+					<-errCh
+					_ = repl.Close(ctx)
+					if err := e.handleSlotLagExceeded(ctx, lastID); err != nil {
+						return err
+					}
+					return errRestartConsumer
+				}
+			}
 		}
+	}
+}
+
+func (e *Engine) slotLagBytes(ctx context.Context) (int64, error) {
+	if e.slotLagOverride != nil {
+		return e.slotLagOverride(ctx)
+	}
+	return wal.SlotLagBytes(ctx, e.pool, e.opts.slotName)
+}
+
+func (e *Engine) handleSlotLagExceeded(ctx context.Context, lastID *int64) error {
+	e.broadcastMustResnapshot(ctx)
+
+	e.mu.Lock()
+	e.streams = make(map[string]*shape.Instance)
+	for _, s := range e.sessions {
+		s.shapes = make(map[string]struct{})
+		s.resume = make(map[string]int64)
+	}
+	e.mu.Unlock()
+
+	if err := wal.DropSlot(ctx, e.pool, e.opts.slotName); err != nil {
+		return fmt.Errorf("tether: drop lagged slot: %w", err)
+	}
+	if _, err := e.pool.Exec(ctx, `
+DELETE FROM tether.checkpoint WHERE consumer_id = $1`, "tether-engine"); err != nil {
+		return fmt.Errorf("tether: clear checkpoint after lag drop: %w", err)
+	}
+	if err := e.resetFanoutCursor(ctx, lastID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (e *Engine) resetFanoutCursor(ctx context.Context, lastID *int64) error {
+	var maxID int64
+	err := e.pool.QueryRow(ctx, `
+SELECT COALESCE(MAX(id), 0) FROM tether.change_log WHERE consumer_id = $1`,
+		"tether-engine").Scan(&maxID)
+	if err != nil {
+		return fmt.Errorf("tether: reset fanout cursor: %w", err)
+	}
+	*lastID = maxID
+	return nil
+}
+
+func (e *Engine) broadcastMustResnapshot(ctx context.Context) {
+	msg, err := proto.Marshal(proto.Error{
+		Type:    "error",
+		Code:    proto.CodeMustResnapshot,
+		Message: ErrSlotLagExceeded.Error(),
+	})
+	if err != nil {
+		return
+	}
+	e.mu.Lock()
+	sessions := make([]*session, 0, len(e.sessions))
+	for _, s := range e.sessions {
+		sessions = append(sessions, s)
+	}
+	e.mu.Unlock()
+	for _, s := range sessions {
+		if !s.conn.Enqueue(msg) {
+			s.conn.SendBye(ctx, proto.ReasonSlowClient)
+		}
+	}
+}
+
+func (e *Engine) sweepIdleClients(ctx context.Context) {
+	if e.opts.maxClientIdle <= 0 {
+		return
+	}
+	cutoff := time.Now().Add(-e.opts.maxClientIdle)
+	e.mu.Lock()
+	var idle []*session
+	for id, s := range e.sessions {
+		if s.isIdle(cutoff) {
+			idle = append(idle, s)
+			delete(e.sessions, id)
+		}
+	}
+	e.mu.Unlock()
+	for _, s := range idle {
+		s.conn.SendBye(ctx, proto.ReasonIdleClient)
+		e.hub.Remove(s.conn.ID())
 	}
 }
 
@@ -594,6 +771,13 @@ func (e *Engine) dispatchChange(ctx context.Context, ch wal.Change) {
 		evs, err := inst.Apply(ch)
 		if err != nil {
 			e.log.Error("shape apply", "shape", shapeName, "err", err)
+			if errors.Is(err, shape.ErrSchemaDrift) || errors.Is(err, shape.ErrHalted) {
+				for _, s := range sessions {
+					if _, ok := s.shapes[shapeName]; ok {
+						e.sendErr(s.conn, proto.CodeHalted, err.Error(), shapeName)
+					}
+				}
+			}
 			continue
 		}
 		if len(evs) > 0 {
