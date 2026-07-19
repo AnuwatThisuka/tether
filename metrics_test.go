@@ -11,6 +11,7 @@ type recordingMetrics struct {
 	mu      sync.Mutex
 	lag     []int64
 	clients []int
+	disc    []string
 	offsets []struct {
 		client, shape string
 		offset        int64
@@ -38,11 +39,18 @@ func (m *recordingMetrics) ClientsConnected(n int) {
 	m.mu.Unlock()
 }
 
+func (m *recordingMetrics) ClientDisconnected(reason string) {
+	m.mu.Lock()
+	m.disc = append(m.disc, reason)
+	m.mu.Unlock()
+}
+
 func TestNopMetrics_NoPanic(t *testing.T) {
 	var n tether.NopMetrics
 	n.ReplicationLagBytes(1)
 	n.ClientOffset("c1", "tasks", 2)
 	n.ClientsConnected(3)
+	n.ClientDisconnected("slow_client")
 }
 
 func TestWithMetrics_Accepted(t *testing.T) {

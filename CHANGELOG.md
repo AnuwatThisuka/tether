@@ -11,8 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Operability metrics hooks (`Metrics`, `WithMetrics`, `NopMetrics`): replication
-  lag bytes, live client count, and per-client buffered shape offsets. No new
-  dependencies — hosts adapt to Prometheus/OTel themselves (`docs/embed.md`).
+  lag bytes, live client count, per-client buffered shape offsets, and
+  `ClientDisconnected(reason)` for slow/idle eviction. No new dependencies —
+  hosts adapt to Prometheus/OTel themselves (`docs/embed.md`).
+- Backpressure docs: `WithClientBuffer` guidance; disconnects log
+  `client_id` + reason via `slog`.
 
 ## [0.1.0] - 2026-07-19
 

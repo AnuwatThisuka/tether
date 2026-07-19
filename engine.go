@@ -58,6 +58,10 @@ func WithClaimsKey(fn ClaimsKeyFunc) Option {
 }
 
 // WithClientBuffer sets the per-client outbound buffer size (default 64).
+// When the buffer is full, that client is disconnected with bye reason
+// slow_client so the WAL reader and other clients are not stalled
+// (Invariant 7). Prefer a small buffer and let clients resume by offset
+// over a huge buffer that hides a stuck consumer.
 func WithClientBuffer(n int) Option {
 	return func(o *options) { o.clientBuffer = n }
 }
@@ -385,7 +389,7 @@ func (e *Engine) subscribeShape(ctx context.Context, sess *session, def shape.De
 		if ok {
 			for _, ev := range events {
 				if !e.enqueueChange(sess.conn, def.Name, ev) {
-					sess.conn.SendBye(ctx, proto.ReasonSlowClient)
+					e.disconnect(ctx, sess.conn, proto.ReasonSlowClient)
 					return fmt.Errorf("tether: slow client")
 				}
 			}
@@ -406,7 +410,7 @@ func (e *Engine) subscribeShape(ctx context.Context, sess *session, def shape.De
 			return err
 		}
 		if !sess.conn.Enqueue(msg) {
-			sess.conn.SendBye(ctx, proto.ReasonSlowClient)
+			e.disconnect(ctx, sess.conn, proto.ReasonSlowClient)
 			return fmt.Errorf("tether: slow client")
 		}
 		e.noteClientOffset(sess.conn.ID(), def.Name, inst.Log.LastOffset())
@@ -444,11 +448,19 @@ func (e *Engine) subscribeShape(ctx context.Context, sess *session, def shape.De
 		return err
 	}
 	if !sess.conn.Enqueue(msg) {
-		sess.conn.SendBye(ctx, proto.ReasonSlowClient)
+		e.disconnect(ctx, sess.conn, proto.ReasonSlowClient)
 		return fmt.Errorf("tether: slow client")
 	}
 	e.noteClientOffset(sess.conn.ID(), def.Name, inst.Log.LastOffset())
 	return nil
+}
+
+func (e *Engine) disconnect(ctx context.Context, conn *transport.Conn, reason string) {
+	e.log.Warn("tether client disconnect", "client_id", conn.ID(), "reason", reason)
+	if m := e.opts.metrics; m != nil {
+		m.ClientDisconnected(reason)
+	}
+	conn.SendBye(ctx, reason)
 }
 
 func (e *Engine) noteClientOffset(clientID, shapeName string, offset int64) {
@@ -749,7 +761,7 @@ func (e *Engine) broadcastMustResnapshot(ctx context.Context) {
 	e.mu.Unlock()
 	for _, s := range sessions {
 		if !s.conn.Enqueue(msg) {
-			s.conn.SendBye(ctx, proto.ReasonSlowClient)
+			e.disconnect(ctx, s.conn, proto.ReasonSlowClient)
 		}
 	}
 }
@@ -769,7 +781,7 @@ func (e *Engine) sweepIdleClients(ctx context.Context) {
 	}
 	e.mu.Unlock()
 	for _, s := range idle {
-		s.conn.SendBye(ctx, proto.ReasonIdleClient)
+		e.disconnect(ctx, s.conn, proto.ReasonIdleClient)
 		e.hub.Remove(s.conn.ID())
 	}
 }
@@ -860,7 +872,7 @@ func (e *Engine) dispatchChange(ctx context.Context, ch wal.Change) {
 			}
 			for _, ev := range r.events {
 				if !e.enqueueChange(s.conn, r.shapeName, ev) {
-					s.conn.SendBye(ctx, proto.ReasonSlowClient)
+					e.disconnect(ctx, s.conn, proto.ReasonSlowClient)
 					break
 				}
 			}

@@ -80,7 +80,18 @@ engine, err := tether.New(pgURL, tether.WithMetrics(&promAdapter{…}))
 
 `ReplicationLagBytes` is restart_lsn lag vs the WAL tip (bytes) — the same
 signal as the slot lag guard. `ClientOffset` is last successfully *buffered*
-outbound offset (not a client ack).
+outbound offset (not a client ack). `ClientDisconnected` fires for
+server-initiated `bye` (e.g. `slow_client`, `idle_client`).
+
+## Backpressure
+
+Each client has a fixed outbound channel (`WithClientBuffer`, default 64).
+If a client cannot keep up, tether sends `bye: slow_client` and closes that
+socket. Other clients and the WAL consumer continue. The disconnected client
+should reconnect with its last applied offset (or take a fresh snapshot).
+
+Do not raise the buffer to "fix" slow phones — that only delays OOM. Measure
+`ClientDisconnected("slow_client")` and tune product UX (resume, backoff).
 
 ## Non-goals
 

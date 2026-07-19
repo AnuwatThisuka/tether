@@ -19,6 +19,10 @@ type Metrics interface {
 
 	// ClientsConnected is the number of live WebSocket sessions.
 	ClientsConnected(n int)
+
+	// ClientDisconnected reports a server-initiated disconnect.
+	// reason is a proto bye reason (e.g. slow_client, idle_client).
+	ClientDisconnected(reason string)
 }
 
 // NopMetrics discards all observations.
@@ -32,6 +36,9 @@ func (NopMetrics) ClientOffset(string, string, int64) {}
 
 // ClientsConnected implements Metrics.
 func (NopMetrics) ClientsConnected(int) {}
+
+// ClientDisconnected implements Metrics.
+func (NopMetrics) ClientDisconnected(string) {}
 
 // WithMetrics sets the metrics sink. Default is NopMetrics.
 func WithMetrics(m Metrics) Option {
