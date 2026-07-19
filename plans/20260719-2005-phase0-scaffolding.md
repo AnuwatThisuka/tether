@@ -34,8 +34,8 @@ _(none remaining — module path resolved in Decision Log before implementation.
 
 ## Surprises & Discoveries
 
-- Observation: Repo is not a git repository yet (`git status` fails). Plan move to `plans/done/` waits until a PR / first commit exists.
-  Evidence: `fatal: not a git repository` after scaffolding validation.
+- Observation: Repo was not a git repository during scaffolding validation; initialized afterward as `main` with root commit `1593582`.
+  Evidence: `git init -b main` + first commit on 2026-07-19.
 
 - Observation: `gofumpt` was not on PATH initially; installed via `go install mvdan.cc/gofumpt@latest`. `golangci-lint` was already available and reported 0 issues (includes gofumpt formatter).
   Evidence: acceptance run transcript 2026-07-19.

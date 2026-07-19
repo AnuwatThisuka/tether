@@ -30,18 +30,23 @@ _(none blocking — durability backend and publication strategy decided below.)_
 ## Progress
 
 - [x] (2026-07-19 20:10+07) ExecPlan authored; awaiting approval / implementation.
-- [ ] Add `jackc/pgx/v5` and `jackc/pglogrepl` to `go.mod`.
-- [ ] Implement `internal/wal` slot + publication lifecycle.
-- [ ] Implement pgoutput decode path (Begin/Relation/Insert/Update/Delete/Commit).
-- [ ] Implement Postgres-backed durable change log + LSN checkpoint (persist-before-ack).
-- [ ] Wire a minimal root or internal runner usable from integration tests (not full public Engine yet).
-- [ ] Unit tests for partial UPDATE / TOAST unchanged-marker handling.
-- [ ] Integration: ingest, restart resume, persist-before-ack crash-replay.
-- [ ] Update `IMPLEMENT_PLAN.md` open decisions; `CHANGELOG.md`; close Outcomes; move plan to `plans/done/` on PR.
+- [x] (2026-07-19 20:20+07) Add `jackc/pgx/v5` and `jackc/pglogrepl` to `go.mod`.
+- [x] (2026-07-19 20:20+07) Implement `internal/wal` slot + publication lifecycle.
+- [x] (2026-07-19 20:20+07) Implement pgoutput decode path (Begin/Relation/Insert/Update/Delete/Commit).
+- [x] (2026-07-19 20:20+07) Implement Postgres-backed durable change log + LSN checkpoint (persist-before-ack).
+- [x] (2026-07-19 20:20+07) Wire `wal.Consumer` for integration tests (public Engine still fails closed).
+- [x] (2026-07-19 20:20+07) Unit tests for TOAST unchanged-marker omission + fingerprint drift.
+- [x] (2026-07-19 20:25+07) Integration: ingest, restart resume, persist-before-ack crash-replay, schema drift.
+- [x] (2026-07-19 20:25+07) Update `IMPLEMENT_PLAN.md` open decisions; `CHANGELOG.md`; close Outcomes.
+- [ ] Move plan to `plans/done/` when PR lands.
 
 ## Surprises & Discoveries
 
-_(empty until implementation)_
+- Observation: Starting replication at `IdentifySystem().XLogPos` after inserts skips them. First-run start must be `0/0` (slot restart) unless a durable checkpoint exists.
+  Evidence: `TestIngestInsertPersisted` timed out until `resolveStartLSN` was fixed.
+
+- Observation: A cancelled consumer must close the replication connection before another `Run` on the same slot, or Postgres returns SQLSTATE 55006 (slot active).
+  Evidence: `TestRestartResumesWithoutGap` / crash-replay failures until tests deferred `repl.Close`.
 
 ## Decision Log
 
@@ -61,10 +66,27 @@ _(empty until implementation)_
   Rationale: Avoid premature shape-log schema; keep Invariant 1 testable now.
   Date/Author: 2026-07-19 / plan author
 
+- Decision: Use pgoutput `proto_version '1'` (no in-progress streaming) for Phase 1.
+  Rationale: Committed transactions arrive as Begin…Commit units; simpler and sufficient for Invariant 1.
+  Date/Author: 2026-07-19 / implementer
+
 ## Outcomes & Retrospective
 
-_(fill when Phase 1 is complete)_
+Phase 1 acceptance passed:
 
+- `make test` — decode unit tests green.
+- `make lint` — 0 issues.
+- `make test-integration` — `TestIngestInsertPersisted`, `TestRestartResumesWithoutGap`, `TestPersistBeforeAck_CrashReplay`, `TestSchemaDriftStopsConsumer` green.
+- README v0.1 checkbox for WAL ingest checked.
+- Public `tether.New` still returns `ErrNotImplemented` (intentional).
+
+Gaps / follow-ups (expected):
+
+- Shape filters, snapshot handoff, WebSocket, mutations, slot lag drop — Phases 2–6.
+- Schema drift is in-process only (relation cache in one `Run`); persistence of fingerprints can wait for Phase 2 shape halt UX.
+- Move this ExecPlan to `plans/done/` on PR.
+
+Purpose met: inserts into watched tables appear in `tether.change_log` at a durable LSN; crash-before-ack does not lose them; ack never runs ahead of durability.
 ## Context and Orientation
 
 Current tree (post Phase 0):
