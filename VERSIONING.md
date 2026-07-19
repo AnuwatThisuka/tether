@@ -21,12 +21,12 @@ go get github.com/anuwatthisuka/tether@v0.1.0
 
 SemVer treats `0.y.z` as unstable: the public API may change. Until `1.0.0`:
 
-| Change                                              | Bump   |
-| --------------------------------------------------- | ------ |
-| Bugfix, docs, tests, internal-only changes         | PATCH  |
-| Backward-compatible feature in the root package     | MINOR  |
-| Breaking change to the root (public) package        | MINOR  |
-| First stable API commitment                         | MAJOR → `1.0.0` |
+| Change                                          | Bump            |
+| ----------------------------------------------- | --------------- |
+| Bugfix, docs, tests, internal-only changes      | PATCH           |
+| Backward-compatible feature in the root package | MINOR           |
+| Breaking change to the root (public) package    | MINOR           |
+| First stable API commitment                     | MAJOR → `1.0.0` |
 
 `internal/` is not a compatibility surface and may change in any release
 without a bump by itself (only bump when a public release ships).
