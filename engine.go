@@ -672,47 +672,46 @@ func (e *Engine) runConsumerCycle(
 				e.log.Error("tether fanout", "slot", e.opts.slotName, "err", err)
 			}
 			e.sweepIdleClients(ctx)
-			e.reportMetrics(ctx)
-			if e.opts.maxSlotLag > 0 {
-				lag, err := e.slotLagBytes(ctx)
-				if err != nil {
-					e.log.Error("tether slot lag", "slot", e.opts.slotName, "err", err)
-					continue
+			e.reportClientCount()
+
+			// Sample lag once per tick for both metrics and the lag guard so
+			// one-shot test overrides (and expensive queries) are not doubled.
+			lag, lagErr := e.slotLagBytes(ctx)
+			if lagErr != nil {
+				if ctx.Err() == nil && !errors.Is(lagErr, context.Canceled) {
+					e.log.Error("tether slot lag", "slot", e.opts.slotName, "err", lagErr)
 				}
-				if lag > e.opts.maxSlotLag {
-					e.log.Error("tether slot lag exceeded",
-						"slot", e.opts.slotName,
-						"lag_bytes", lag,
-						"max_bytes", e.opts.maxSlotLag)
-					consCancel()
-					<-errCh
-					_ = repl.Close(ctx)
-					if err := e.handleSlotLagExceeded(ctx, lastID); err != nil {
-						return err
-					}
-					return errRestartConsumer
+				continue
+			}
+			if m := e.opts.metrics; m != nil {
+				m.ReplicationLagBytes(lag)
+			}
+			if e.opts.maxSlotLag > 0 && lag > e.opts.maxSlotLag {
+				e.log.Error("tether slot lag exceeded",
+					"slot", e.opts.slotName,
+					"lag_bytes", lag,
+					"max_bytes", e.opts.maxSlotLag)
+				consCancel()
+				<-errCh
+				_ = repl.Close(ctx)
+				if err := e.handleSlotLagExceeded(ctx, lastID); err != nil {
+					return err
 				}
+				return errRestartConsumer
 			}
 		}
 	}
 }
 
-func (e *Engine) reportMetrics(ctx context.Context) {
+func (e *Engine) reportClientCount() {
 	m := e.opts.metrics
 	if m == nil {
-		m = NopMetrics{}
+		return
 	}
 	e.mu.Lock()
 	n := len(e.sessions)
 	e.mu.Unlock()
 	m.ClientsConnected(n)
-
-	lag, err := e.slotLagBytes(ctx)
-	if err != nil {
-		e.log.Error("tether metrics lag", "slot", e.opts.slotName, "err", err)
-		return
-	}
-	m.ReplicationLagBytes(lag)
 }
 
 func (e *Engine) slotLagBytes(ctx context.Context) (int64, error) {
@@ -722,7 +721,13 @@ func (e *Engine) slotLagBytes(ctx context.Context) (int64, error) {
 	if fn != nil {
 		return fn(ctx)
 	}
-	return wal.SlotLagBytes(ctx, e.pool, e.opts.slotName)
+	e.mu.Lock()
+	pool := e.pool
+	e.mu.Unlock()
+	if pool == nil {
+		return 0, fmt.Errorf("tether: pool closed")
+	}
+	return wal.SlotLagBytes(ctx, pool, e.opts.slotName)
 }
 
 func (e *Engine) handleSlotLagExceeded(ctx context.Context, lastID *int64) error {
@@ -803,7 +808,13 @@ func (e *Engine) sweepIdleClients(ctx context.Context) {
 }
 
 func (e *Engine) fanOutNewChanges(ctx context.Context, lastID *int64) error {
-	rows, err := e.pool.Query(ctx, `
+	e.mu.Lock()
+	pool := e.pool
+	e.mu.Unlock()
+	if pool == nil {
+		return fmt.Errorf("tether: pool closed")
+	}
+	rows, err := pool.Query(ctx, `
 SELECT id, lsn, op, schema_name, table_name, relation_fingerprint, old_row, new_row
 FROM tether.change_log
 WHERE consumer_id = $1 AND id > $2

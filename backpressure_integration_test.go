@@ -77,8 +77,15 @@ CREATE TABLE public.%s (
 	})
 
 	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go func() { _ = eng.Run(runCtx) }()
+	errCh := make(chan error, 1)
+	go func() { errCh <- eng.Run(runCtx) }()
+	defer func() {
+		cancel()
+		select {
+		case <-errCh:
+		case <-time.After(3 * time.Second):
+		}
+	}()
 	time.Sleep(300 * time.Millisecond)
 
 	srv := httptest.NewServer(eng.Handler())
@@ -90,7 +97,7 @@ CREATE TABLE public.%s (
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close(websocket.StatusNormalClosure, "")
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
 	writeJSON(t, ctx, conn, proto.Hello{Type: "hello", Protocol: proto.ProtocolVersion})
 	writeJSON(t, ctx, conn, proto.Subscribe{Type: "subscribe", Shapes: []string{table}})
 	// Drain snapshot once so membership is live, then stop consuming.

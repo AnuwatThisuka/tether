@@ -192,7 +192,7 @@ func runClient(ctx context.Context, baseURL, shape string, warmup int, lagMu *sy
 	if err != nil {
 		return err
 	}
-	defer conn.Close(websocket.StatusNormalClosure, "")
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
 
 	if err := writeJSON(ctx, conn, proto.Hello{Type: "hello", Protocol: proto.ProtocolVersion}); err != nil {
 		return err

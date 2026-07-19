@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+
+- Sample slot lag once per Run tick (metrics + lag guard) so one-shot lag
+  overrides are not consumed before the guard; protect pool access in
+  `slotLagBytes` / fan-out against `Close` races under `-race`.
+
 ### Added
 
 - `cmd/bench` + `make bench`: insert→WebSocket throughput and shape lag
