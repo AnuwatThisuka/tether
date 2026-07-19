@@ -1,5 +1,7 @@
 # tether
 
+[![CI](https://github.com/AnuwatThisuka/tether/actions/workflows/ci.yml/badge.svg)](https://github.com/AnuwatThisuka/tether/actions/workflows/ci.yml)
+
 **A Postgres sync engine that lives inside your Go server.**
 
 No sidecar. No second runtime. No extra box on the architecture diagram.

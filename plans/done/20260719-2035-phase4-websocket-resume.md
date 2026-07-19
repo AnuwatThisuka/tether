@@ -14,7 +14,7 @@ Clients connect over WebSocket, authenticate via host callback, subscribe to sha
 - [x] `Engine.Handler` / `Run` / `WithAuth` / stream store for resume
 - [x] `Log.After`; resume + buffer-full unit tests; `TestWebSocketResume`
 - [x] CHANGELOG / README / commit
-- [ ] Move to `plans/done/` on PR
+- [x] Move to `plans/done/` on PR
 
 ## Surprises & Discoveries
 

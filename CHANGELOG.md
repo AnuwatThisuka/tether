@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- GitHub Actions CI: unit tests, golangci-lint, and `make test-integration`
+  under `-race` against Docker Postgres (`wal_level=logical`).
 - Headline e2e convergence test (`internal/e2e.TestConvergence`): two offline
   clients, kill mid-write + cold restart, idempotent replay, identical final
   snapshots vs Postgres (`make test-integration` runs under `-race`).

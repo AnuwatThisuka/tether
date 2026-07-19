@@ -20,7 +20,7 @@ a minimal embedder guide.
 - [x] Loud `shape_halted` on schema drift apply
 - [x] Integration tests + embedder doc
 - [x] CHANGELOG / README checkbox / commit
-- [ ] Move to `plans/done/` on PR
+- [x] Move to `plans/done/` on PR
 
 ## Surprises & Discoveries
 

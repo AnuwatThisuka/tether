@@ -15,7 +15,7 @@ converge to identical state with no lost write and no double-apply.
 - [x] `make test-integration` runs under `-race`
 - [x] README / CHANGELOG note named test
 - [x] Commit
-- [ ] Move to `plans/done/` on PR
+- [x] Move to `plans/done/` on PR
 
 ## Surprises & Discoveries
 

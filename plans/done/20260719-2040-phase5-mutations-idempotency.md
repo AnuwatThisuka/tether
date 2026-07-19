@@ -14,7 +14,7 @@ Clients send mutations with an idempotency key over WebSocket. The server applie
 - [x] Wire into `Engine.serveWS`
 - [x] Integration: double key + WAL visibility
 - [x] CHANGELOG / README / commit
-- [ ] Move to `plans/done/` on PR
+- [x] Move to `plans/done/` on PR
 
 ## Surprises & Discoveries
 

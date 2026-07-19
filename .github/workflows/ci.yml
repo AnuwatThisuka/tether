@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: unit + lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Unit tests
+        run: go test ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.1.6
+
+  integration:
+    name: integration (-race)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Start Postgres (wal_level=logical)
+        run: make db-up
+
+      - name: Integration tests
+        run: make test-integration
+        env:
+          TETHER_TEST_DSN: postgres://tether:tether@localhost:54321/tether?replication=database
+
+      - name: Stop Postgres
+        if: always()
+        run: make db-down
