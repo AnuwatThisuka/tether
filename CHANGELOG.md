@@ -8,16 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Phase B bench: `-batch` COPY inserts, commit-aligned lag (wall clock after
+  commit returns), p50/p95/p99 via `make bench-lag` (`docs/benchmark.md`).
+- `cmd/bench` + `make bench`: insert→WebSocket throughput and shape lag
+  (p50/p99). Fairness notes vs peers in [`docs/benchmark.md`](./docs/benchmark.md).
+
 ### Fixed
 
 - Sample slot lag once per Run tick (metrics + lag guard) so one-shot lag
   overrides are not consumed before the guard; protect pool access in
   `slotLagBytes` / fan-out against `Close` races under `-race`.
-
-### Added
-
-- `cmd/bench` + `make bench`: insert→WebSocket throughput and shape lag
-  (p50/p99). Fairness notes vs peers in [`docs/benchmark.md`](./docs/benchmark.md).
 
 ## [0.2.0] - 2026-07-19
 

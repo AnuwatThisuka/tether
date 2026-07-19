@@ -8,14 +8,14 @@ ingest path are improved (batch inserts, less fsync contention, warm paths).
 
 | Metric                                |            Target | Status                                                                                                          |
 | ------------------------------------- | ----------------: | --------------------------------------------------------------------------------------------------------------- |
-| Commit → Client latency (p50/p95/p99) | &lt; 50 ms on LAN | **Partial** — `make bench` reports p50/p99 (`sent_ns` → WS recv). Not yet p95; commit LSN time ≠ insert return. |
+| Commit → Client latency (p50/p95/p99) | &lt; 50 ms on LAN | **Phase B** — `make bench-lag`: lag = WS recv − wall clock when INSERT/COPY returned; reports p50/p95/p99. LAN &lt;50ms still aspirational on stock laptop + sync WAL. |
 | Max concurrent WebSocket clients      |              10k+ | **Not measured** — needs soak harness + OS `ulimit` / fd tuning.                                                |
 | Resume after reconnect                |       &lt; 100 ms | **Not measured** — planned: connect → subscribe with offset → first delta.                                      |
 | Snapshot 1M rows                      |   time in seconds | **Not measured** — planned: `snapshot.Take` + WS snapshot send wall clock.                                      |
 | Memory per connection                 |         KB / conn | **Not measured** — planned: `runtime.MemStats` / `GODEBUG` before/after N conns.                                |
 | CPU at 1k / 5k / 10k clients          |        % or cores | **Not measured** — planned: steady idle + light traffic profiles.                                               |
 | WAL ingest throughput                 |              MB/s | **Not measured** — planned: bulk load + `pg_current_wal_lsn` delta / time (separate from WS).                   |
-| Broadcast latency                     |         p50 / p99 | **Partial** — same as commit→client lag for single-shape fan-out today.                                         |
+| Broadcast latency                     |         p50 / p99 | **Phase B** — same series as commit→client for single-shape fan-out.                                         |
 
 ### Legend
 
@@ -25,40 +25,41 @@ ingest path are improved (batch inserts, less fsync contention, warm paths).
 | Not measured | No automated command yet                                                     |
 | Planned      | Intended next harness work (see below)                                       |
 
-## What `make bench` measures today
+## What `make bench` / `make bench-lag` measure
 
 End-to-end **tether** microbench (`cmd/bench`):
 
 1. Start an embedded engine + WebSocket handler against local Postgres
    (`wal_level=logical`).
 2. Connect `-clients` subscribers to one shape.
-3. `INSERT` `-rows` rows (plus `-warmup`) with a `sent_ns` timestamp column.
-4. Report:
-   - insert-only throughput (rows/s)
-   - wall-clock throughput until every client has seen every row
-   - shape delivery lag: `recv_time - sent_ns` → **p50 / p99 / max**
+3. Insert `-rows` (+ `-warmup`) with `-batch` rows per commit (`-batch=1`
+   single `INSERT`; `-batch>1` uses `COPY`).
+4. Record **commit time** as wall clock when the INSERT/COPY call returns
+   (durable from the client’s POV).
+5. Report:
+   - commit throughput (rows/s)
+   - wall-clock until every client has seen every row
+   - **commit → client lag**: p50 / **p95** / p99 / max
 
 ```bash
 make db-up
 export TETHER_TEST_DSN='postgres://tether:tether@localhost:54321/tether?replication=database'
-make bench
+make bench          # defaults: batch=1
+make bench-lag      # Phase B defaults: batch=100, rows=2000, p50/p95/p99
 # or:
-go run ./cmd/bench -rows=10000 -clients=4 -warmup=200
+go run ./cmd/bench -batch=100 -rows=5000 -clients=2 -warmup=100
 ```
 
-**Known bias:** inserts are synchronous single-row `INSERT`s (~300–400 rows/s on
-a laptop). That caps throughput and can inflate lag under backlog. Treat results
-as a **regression check**, not a marketing ceiling.
-
-This path exercises WAL decode → persist → fan-out → WebSocket. It does **not**
-claim to be a substitute for production load tests.
+**Known bias:** localhost Docker Postgres with default `synchronous_commit`;
+lag includes WAL decode + persist + fan-out. Treat as a **regression check**,
+not a marketing ceiling. Hitting &lt;50 ms p99 needs a tuned LAN + lighter load.
 
 ## Phased harness plan
 
 | Phase   | Command (proposed)    | Covers                                                      |
 | ------- | --------------------- | ----------------------------------------------------------- |
-| A (now) | `make bench`          | Rough commit→WS lag + rows/s                                |
-| B       | `make bench-lag`      | True commit LSN timestamp, p50/p95/p99, batch insert option |
+| A       | `make bench`          | Rough commit→WS lag + rows/s                                |
+| B (now) | `make bench-lag`      | Commit-aligned lag, p50/p95/p99, `-batch` COPY inserts      |
 | C       | `make bench-resume`   | Reconnect + offset → first change &lt; 100 ms target        |
 | D       | `make bench-snapshot` | Snapshot wall clock for N rows (incl. 1M)                   |
 | E       | `make bench-scale`    | N clients (1k/5k/10k): mem/conn, CPU%, disconnect rate      |

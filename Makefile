@@ -1,6 +1,6 @@
 TETHER_TEST_DSN ?= postgres://tether:tether@localhost:54321/tether?replication=database
 
-.PHONY: test test-integration lint fmt db-up db-down db-check bench
+.PHONY: test test-integration lint fmt db-up db-down db-check bench bench-lag
 
 test:
 	go test ./...
@@ -12,6 +12,10 @@ test-integration: db-check
 # End-to-end insert→WebSocket microbench. Requires db-up + TETHER_TEST_DSN.
 bench: db-check
 	TETHER_TEST_DSN='$(TETHER_TEST_DSN)' go run ./cmd/bench $(BENCH_ARGS)
+
+# Phase B: commit-aligned lag (p50/p95/p99) with batched COPY inserts.
+bench-lag: db-check
+	TETHER_TEST_DSN='$(TETHER_TEST_DSN)' go run ./cmd/bench -batch=100 -rows=2000 -warmup=100 -clients=1 $(BENCH_ARGS)
 
 lint:
 	@command -v golangci-lint >/dev/null || { echo 'golangci-lint not found; see https://golangci-lint.run/welcome/install/'; exit 1; }
