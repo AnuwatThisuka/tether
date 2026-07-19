@@ -13,9 +13,10 @@ the Postgres WAL via logical replication, filters changes into per-client
 This is a **correctness-critical data system**. Silent data loss is the
 worst possible outcome and is worse than a crash. When in doubt, fail loudly.
 
-The master design and phased build order live in [`IMPLEMENT_PLAN.md`](./IMPLEMENT_PLAN.md).
+The master design and phased build order live in [`IMPLEMENT_PLAN.md`](./IMPLEMENT_PLAN.md)
+(v0.1) and [`IMPLEMENT_PLAN_v0.2.md`](./IMPLEMENT_PLAN_v0.2.md) (operability).
 Day-to-day work uses ExecPlans under `plans/`; those must stay consistent
-with this file and with `IMPLEMENT_PLAN.md`.
+with this file and with the master plans.
 
 ## Commands
 

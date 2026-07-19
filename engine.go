@@ -40,6 +40,7 @@ type options struct {
 	onMutation    MutationHandler
 	maxSlotLag    int64
 	maxClientIdle time.Duration
+	metrics       Metrics
 }
 
 // MutationHandler applies a client mutation inside a host-controlled transaction.
@@ -169,6 +170,7 @@ func New(pgURL string, opts ...Option) (*Engine, error) {
 		claimsKey:     func(c Claims) string { return fmt.Sprint(c) },
 		maxSlotLag:    2 * 1024 * 1024 * 1024, // 2 GiB
 		maxClientIdle: 24 * time.Hour,
+		metrics:       NopMetrics{},
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -407,6 +409,7 @@ func (e *Engine) subscribeShape(ctx context.Context, sess *session, def shape.De
 			sess.conn.SendBye(ctx, proto.ReasonSlowClient)
 			return fmt.Errorf("tether: slow client")
 		}
+		e.noteClientOffset(sess.conn.ID(), def.Name, inst.Log.LastOffset())
 		return nil
 	}
 
@@ -444,7 +447,14 @@ func (e *Engine) subscribeShape(ctx context.Context, sess *session, def shape.De
 		sess.conn.SendBye(ctx, proto.ReasonSlowClient)
 		return fmt.Errorf("tether: slow client")
 	}
+	e.noteClientOffset(sess.conn.ID(), def.Name, inst.Log.LastOffset())
 	return nil
+}
+
+func (e *Engine) noteClientOffset(clientID, shapeName string, offset int64) {
+	if m := e.opts.metrics; m != nil {
+		m.ClientOffset(clientID, shapeName, offset)
+	}
 }
 
 func (e *Engine) enqueueChange(conn *transport.Conn, shapeName string, ev shape.Event) bool {
@@ -458,7 +468,11 @@ func (e *Engine) enqueueChange(conn *transport.Conn, shapeName string, ev shape.
 	if err != nil {
 		return true
 	}
-	return conn.Enqueue(msg)
+	if !conn.Enqueue(msg) {
+		return false
+	}
+	e.noteClientOffset(conn.ID(), shapeName, ev.Offset)
+	return true
 }
 
 func (e *Engine) sendErr(conn *transport.Conn, code, message, shapeName string) {
@@ -632,6 +646,7 @@ func (e *Engine) runConsumerCycle(
 				e.log.Error("tether fanout", "err", err)
 			}
 			e.sweepIdleClients(ctx)
+			e.reportMetrics(ctx)
 			if e.opts.maxSlotLag > 0 {
 				lag, err := e.slotLagBytes(ctx)
 				if err != nil {
@@ -652,6 +667,24 @@ func (e *Engine) runConsumerCycle(
 			}
 		}
 	}
+}
+
+func (e *Engine) reportMetrics(ctx context.Context) {
+	m := e.opts.metrics
+	if m == nil {
+		m = NopMetrics{}
+	}
+	e.mu.Lock()
+	n := len(e.sessions)
+	e.mu.Unlock()
+	m.ClientsConnected(n)
+
+	lag, err := e.slotLagBytes(ctx)
+	if err != nil {
+		e.log.Error("tether metrics lag", "err", err)
+		return
+	}
+	m.ReplicationLagBytes(lag)
 }
 
 func (e *Engine) slotLagBytes(ctx context.Context) (int64, error) {

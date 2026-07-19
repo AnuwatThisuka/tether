@@ -19,6 +19,7 @@ engine, err := tether.New(pgURL,
     }),
     tether.MaxSlotLag(2*1024*1024*1024), // drop slot before disk fills
     tether.MaxClientIdle(24*time.Hour),
+    tether.WithMetrics(promMetrics), // optional; see Metrics below
 )
 if err != nil {
     log.Fatal(err)
@@ -60,6 +61,26 @@ mux.Handle("/sync", engine.Handler())
 5. **Slot lag** — if lag exceeds `MaxSlotLag`, tether drops the slot, tells
    clients to resnapshot, and recreates the slot. Prefer a fresh snapshot over
    pinning WAL.
+
+## Metrics (no Prometheus dependency)
+
+`tether` exposes a small `Metrics` interface. Wire it to your stack:
+
+```go
+type promAdapter struct{ lag, clients prometheus.Gauge /* … */ }
+
+func (p *promAdapter) ReplicationLagBytes(n int64) { p.lag.Set(float64(n)) }
+func (p *promAdapter) ClientsConnected(n int)      { p.clients.Set(float64(n)) }
+func (p *promAdapter) ClientOffset(clientID, shape string, offset int64) {
+    // e.g. GaugeVec with labels client_id, shape
+}
+
+engine, err := tether.New(pgURL, tether.WithMetrics(&promAdapter{…}))
+```
+
+`ReplicationLagBytes` is restart_lsn lag vs the WAL tip (bytes) — the same
+signal as the slot lag guard. `ClientOffset` is last successfully *buffered*
+outbound offset (not a client ack).
 
 ## Non-goals
 
