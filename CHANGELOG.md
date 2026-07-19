@@ -6,6 +6,9 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Server-authoritative mutations (`OnMutation`, `Reject`) with idempotency keys
+  stored in `tether.mutation_keys` inside the same transaction as the handler
+  (Invariant 3). Wire: `mutation` / `mutation_ok` / `mutation_reject`.
 - WebSocket transport (`Engine.Handler`, `Engine.Run`) with `coder/websocket`:
   host `WithAuth`, per-client buffered fan-out (slow client → `bye`), and
   offset resume via in-process shape streams (Invariant 7).

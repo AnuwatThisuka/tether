@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/jackc/pglogrepl"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/anuwatthisuka/tether/internal/mutate"
 	"github.com/anuwatthisuka/tether/internal/proto"
 	"github.com/anuwatthisuka/tether/internal/shape"
 	"github.com/anuwatthisuka/tether/internal/snapshot"
@@ -34,7 +36,11 @@ type options struct {
 	slotName     string
 	publication  string
 	logger       *slog.Logger
+	onMutation   MutationHandler
 }
+
+// MutationHandler applies a client mutation inside a host-controlled transaction.
+type MutationHandler func(ctx context.Context, tx pgx.Tx, m Mutation) error
 
 // WithAuth sets the handshake auth callback. If nil, Claims are nil.
 func WithAuth(fn AuthFunc) Option {
@@ -117,6 +123,14 @@ func (e *Engine) Shape(name string, bind func(Claims) Filter, opts ...ShapeOptio
 		return fmt.Errorf("tether: nil engine")
 	}
 	return e.reg.Register(shapeDef(name, bind, opts...))
+}
+
+// OnMutation registers the write handler. Must be set before clients send mutations.
+func (e *Engine) OnMutation(fn MutationHandler) {
+	if e == nil {
+		return
+	}
+	e.opts.onMutation = fn
 }
 
 // Registry exposes the shape registry for tests.
@@ -205,10 +219,66 @@ func (e *Engine) serveWS(w http.ResponseWriter, r *http.Request) {
 			if err := e.handleSubscribe(ctx, sess, msg.Shapes); err != nil {
 				e.sendErr(conn, proto.CodeHalted, err.Error(), "")
 			}
+		case "mutation":
+			var msg proto.Mutation
+			if err := proto.Decode(data, &msg); err != nil {
+				e.sendErr(conn, proto.CodeBadProtocol, err.Error(), "")
+				continue
+			}
+			e.handleMutation(ctx, sess, msg)
 		default:
 			e.sendErr(conn, proto.CodeBadProtocol, "unknown message type "+typ, "")
 		}
 	}
+}
+
+func (e *Engine) handleMutation(ctx context.Context, sess *session, msg proto.Mutation) {
+	reply := func(v any) {
+		b, err := proto.Marshal(v)
+		if err != nil {
+			return
+		}
+		_ = sess.conn.Enqueue(b)
+	}
+
+	if e.opts.onMutation == nil {
+		e.sendErr(sess.conn, proto.CodeNoHandler, "OnMutation not configured", "")
+		return
+	}
+	if err := e.ensurePool(ctx); err != nil {
+		e.sendErr(sess.conn, proto.CodeHalted, err.Error(), "")
+		return
+	}
+	if err := mutate.EnsureSchema(ctx, e.pool); err != nil {
+		e.sendErr(sess.conn, proto.CodeHalted, err.Error(), "")
+		return
+	}
+
+	m, err := newMutation(msg.Op, msg.Key, sess.claims, msg.Args)
+	if err != nil {
+		reply(proto.MutationReject{Type: "mutation_reject", ID: msg.ID, Reason: err.Error()})
+		return
+	}
+
+	res, err := mutate.Apply(
+		ctx, e.pool, m.Key, m.Op, m.Claims, m.Args(),
+		func(ctx context.Context, tx pgx.Tx, op, key string, claims any, args map[string]any) error {
+			return e.opts.onMutation(ctx, tx, Mutation{
+				Op: op, Key: key, Claims: claims, args: args,
+			})
+		},
+		IsReject,
+		RejectReason,
+	)
+	if err != nil {
+		e.sendErr(sess.conn, proto.CodeHalted, err.Error(), "")
+		return
+	}
+	if res.Rejected {
+		reply(proto.MutationReject{Type: "mutation_reject", ID: msg.ID, Reason: res.Reason})
+		return
+	}
+	reply(proto.MutationOK{Type: "mutation_ok", ID: msg.ID, Duplicate: res.Duplicate})
 }
 
 func (e *Engine) handleSubscribe(ctx context.Context, sess *session, names []string) error {
@@ -384,6 +454,9 @@ func (e *Engine) Run(ctx context.Context) error {
 		return err
 	}
 	if err := wal.EnsureSchema(ctx, e.pool); err != nil {
+		return err
+	}
+	if err := mutate.EnsureSchema(ctx, e.pool); err != nil {
 		return err
 	}
 

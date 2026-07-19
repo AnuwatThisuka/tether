@@ -58,12 +58,36 @@ type Bye struct {
 	Reason string `json:"reason"`
 }
 
+// Mutation is a client write request.
+type Mutation struct {
+	Type string         `json:"type"` // mutation
+	ID   string         `json:"id"`   // client correlation id
+	Op   string         `json:"op"`
+	Key  string         `json:"key"` // idempotency key
+	Args map[string]any `json:"args,omitempty"`
+}
+
+// MutationOK acknowledges a successful (or duplicate) apply.
+type MutationOK struct {
+	Type      string `json:"type"` // mutation_ok
+	ID        string `json:"id"`
+	Duplicate bool   `json:"duplicate,omitempty"`
+}
+
+// MutationReject refuses a mutation with a client-visible reason.
+type MutationReject struct {
+	Type   string `json:"type"` // mutation_reject
+	ID     string `json:"id"`
+	Reason string `json:"reason"`
+}
+
 const (
 	CodeMustResnapshot = "must_resnapshot"
 	CodeUnauthorized   = "unauthorized"
 	CodeBadProtocol    = "bad_protocol"
 	CodeUnknownShape   = "unknown_shape"
 	CodeHalted         = "shape_halted"
+	CodeNoHandler      = "no_mutation_handler"
 
 	ReasonSlowClient = "slow_client"
 	ReasonShutdown   = "shutdown"

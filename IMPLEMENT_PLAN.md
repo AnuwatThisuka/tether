@@ -528,7 +528,7 @@ Record outcomes here when decided:
 | Shape-log durability backend | Postgres tables (`tether.change_log` / `tether.checkpoint` in Phase 1) | Done (2026-07-19) — Phase 1 ExecPlan |
 | Offset encoding              | LSN+seq vs monotonic integer per shape      | Open — decide in Phase 2/3; must be opaque to clients          |
 | Wire format                  | JSON v1 vs compact binary                   | Prefer JSON v1 for debuggability; decide in Phase 4            |
-| Idempotency table ownership  | tether-managed schema vs host-provided      | Prefer tether-managed migration helper; decide in Phase 5      |
+| Idempotency table ownership  | tether-managed `tether.mutation_keys`       | Done (2026-07-19) — Phase 5 ExecPlan |
 | Publication strategy         | one publication for all watched tables; filter in-process | Done (2026-07-19) — Phase 1 ExecPlan |
 
 ---
