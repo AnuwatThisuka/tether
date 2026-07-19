@@ -2,7 +2,7 @@
 
 `tether` follows [Semantic Versioning 2.0.0](https://semver.org/).
 
-Current version: **0.1.0** (`tether.Version`, git tag `v0.1.0`).
+Current version: **0.2.0** (`tether.Version`, git tag `v0.2.0`).
 
 ## Format
 

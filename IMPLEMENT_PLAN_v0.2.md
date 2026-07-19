@@ -95,13 +95,16 @@ OTel traces: **out of slice 3** unless deps approved.
 
 ## Definition of done (v0.2.0)
 
-- [ ] Slice 1–3 accepted with tests and CHANGELOG entries
-- [ ] README v0.2 checkboxes checked with named tests / adapter example
-- [ ] Direct deps unchanged (`pgx`, `pglogrepl`, `websocket`)
-- [ ] Tag `v0.2.0`; `tether.Version` updated
+- [x] Slice 1–3 accepted with tests and CHANGELOG entries
+- [x] README v0.2 checkboxes checked with named tests / adapter example
+- [x] Direct deps unchanged (`pgx`, `pglogrepl`, `websocket`)
+- [x] Tag `v0.2.0`; `tether.Version` updated
+
+OpenTelemetry traces remain deferred (Slice 4 / later).
 
 ## Revision history
 
-| Date       | Change                        |
-| ---------- | ----------------------------- |
-| 2026-07-19 | Initial v0.2 operability plan |
+| Date       | Change                          |
+| ---------- | ------------------------------- |
+| 2026-07-19 | Initial v0.2 operability plan   |
+| 2026-07-19 | Slices 1–3 shipped as v0.2.0    |

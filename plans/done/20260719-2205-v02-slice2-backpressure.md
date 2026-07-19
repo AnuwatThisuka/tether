@@ -18,7 +18,7 @@ and clearer embedder guidance for `WithClientBuffer`.
 - [x] Tests for disconnect metric
 - [x] CHANGELOG Unreleased
 - [x] Commit
-- [ ] Move to `plans/done/` on release
+- [x] Move to `plans/done/` on release
 
 ## Decision Log
 

@@ -18,7 +18,7 @@ engine loop and fan-out path.
 - [x] Unit test with recording metrics; optional integration lag sample
 - [x] Docs: embed.md adapter sketch; CHANGELOG Unreleased
 - [x] Commit
-- [ ] Move to `plans/done/` on PR / release
+- [x] Move to `plans/done/` on release
 
 ## Surprises & Discoveries
 

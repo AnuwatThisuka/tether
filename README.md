@@ -22,7 +22,7 @@ mux.Handle("/sync", engine.Handler())
 
 That's the whole integration.
 
-> **Status: v0.1.0** (Semantic Versioning — see [VERSIONING.md](./VERSIONING.md)).
+> **Status: v0.2.0** (Semantic Versioning — see [VERSIONING.md](./VERSIONING.md)).
 > MAJOR is still `0`: the public API may change. Not production-hardened.
 > See [Roadmap](#roadmap) for what is covered by tests today.
 
@@ -177,9 +177,10 @@ Covered by `TestConvergence` in `internal/e2e` (`make test-integration`).
 
 **v0.2 — operability**
 
-- [ ] Metrics: replication lag, slot size, per-client offsets
-- [ ] Backpressure and slow-client eviction
-- [ ] Structured logging, OpenTelemetry traces
+- [x] Metrics: replication lag, slot size, per-client offsets — `TestMetrics_LagAndClientsSampled`
+- [x] Backpressure and slow-client eviction — `TestMetrics_SlowClientDisconnected`, `TestEnqueue_FullBuffer`
+- [x] Structured logging (`WithLogger`, consistent slog attrs) — `TestWithLogger_DisconnectIncludesAttrs`
+- [ ] OpenTelemetry traces (deferred until deps approved)
 
 **Later, if users ask**
 
@@ -221,4 +222,4 @@ reproduction. Correctness issues take priority over features.
 
 ## Versioning
 
-[Semantic Versioning](./VERSIONING.md). Current: `tether.Version` → **0.1.0**.
+[Semantic Versioning](./VERSIONING.md). Current: `tether.Version` → **0.2.0**.
