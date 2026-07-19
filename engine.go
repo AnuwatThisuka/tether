@@ -89,6 +89,15 @@ func MaxClientIdle(d time.Duration) Option {
 	return func(o *options) { o.maxClientIdle = d }
 }
 
+// WithLogger sets the slog logger. Default is slog.Default().
+func WithLogger(l *slog.Logger) Option {
+	return func(o *options) {
+		if l != nil {
+			o.logger = l
+		}
+	}
+}
+
 // Engine is the sync engine handle returned by New.
 type Engine struct {
 	pgURL string
@@ -456,7 +465,12 @@ func (e *Engine) subscribeShape(ctx context.Context, sess *session, def shape.De
 }
 
 func (e *Engine) disconnect(ctx context.Context, conn *transport.Conn, reason string) {
-	e.log.Warn("tether client disconnect", "client_id", conn.ID(), "reason", reason)
+	e.log.Warn(
+		"tether client disconnect",
+		"slot", e.opts.slotName,
+		"client_id", conn.ID(),
+		"reason", reason,
+	)
 	if m := e.opts.metrics; m != nil {
 		m.ClientDisconnected(reason)
 	}
@@ -655,19 +669,21 @@ func (e *Engine) runConsumerCycle(
 			return ctx.Err()
 		case <-ticker.C:
 			if err := e.fanOutNewChanges(ctx, lastID); err != nil {
-				e.log.Error("tether fanout", "err", err)
+				e.log.Error("tether fanout", "slot", e.opts.slotName, "err", err)
 			}
 			e.sweepIdleClients(ctx)
 			e.reportMetrics(ctx)
 			if e.opts.maxSlotLag > 0 {
 				lag, err := e.slotLagBytes(ctx)
 				if err != nil {
-					e.log.Error("tether slot lag", "err", err)
+					e.log.Error("tether slot lag", "slot", e.opts.slotName, "err", err)
 					continue
 				}
 				if lag > e.opts.maxSlotLag {
 					e.log.Error("tether slot lag exceeded",
-						"lag_bytes", lag, "max_bytes", e.opts.maxSlotLag)
+						"slot", e.opts.slotName,
+						"lag_bytes", lag,
+						"max_bytes", e.opts.maxSlotLag)
 					consCancel()
 					<-errCh
 					_ = repl.Close(ctx)
@@ -693,7 +709,7 @@ func (e *Engine) reportMetrics(ctx context.Context) {
 
 	lag, err := e.slotLagBytes(ctx)
 	if err != nil {
-		e.log.Error("tether metrics lag", "err", err)
+		e.log.Error("tether metrics lag", "slot", e.opts.slotName, "err", err)
 		return
 	}
 	m.ReplicationLagBytes(lag)
@@ -850,7 +866,12 @@ func (e *Engine) dispatchChange(ctx context.Context, ch wal.Change) {
 		}
 		evs, err := inst.Apply(ch)
 		if err != nil {
-			e.log.Error("shape apply", "shape", shapeName, "err", err)
+			e.log.Error(
+				"shape apply",
+				"slot", e.opts.slotName,
+				"shape", shapeName,
+				"err", err,
+			)
 			if errors.Is(err, shape.ErrSchemaDrift) || errors.Is(err, shape.ErrHalted) {
 				for _, s := range sessions {
 					if s.hasShape(shapeName) {

@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hosts adapt to Prometheus/OTel themselves (`docs/embed.md`).
 - Backpressure docs: `WithClientBuffer` guidance; disconnects log
   `client_id` + reason via `slog`.
+- `WithLogger` and consistent slog attrs (`slot`, `shape`, `client_id`,
+  `lag_bytes`, `reason`, `err`) on fan-out, lag, halt, and disconnect paths.
 
 ## [0.1.0] - 2026-07-19
 

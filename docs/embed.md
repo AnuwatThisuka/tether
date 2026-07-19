@@ -19,6 +19,7 @@ engine, err := tether.New(pgURL,
     }),
     tether.MaxSlotLag(2*1024*1024*1024), // drop slot before disk fills
     tether.MaxClientIdle(24*time.Hour),
+    tether.WithLogger(slog.Default()),
     tether.WithMetrics(promMetrics), // optional; see Metrics below
 )
 if err != nil {

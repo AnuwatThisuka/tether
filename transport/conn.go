@@ -102,16 +102,18 @@ func (c *Conn) Close(reason string) {
 func (c *Conn) shutdown(ctx context.Context, reason string, bye bool) {
 	c.once.Do(func() {
 		c.closed.Store(true)
-		if bye {
-			msg, err := proto.Marshal(proto.Bye{Type: "bye", Reason: reason})
-			if err == nil {
-				wctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-				_ = c.ws.Write(wctx, websocket.MessageText, msg)
-				cancel()
+		if c.ws != nil {
+			if bye {
+				msg, err := proto.Marshal(proto.Bye{Type: "bye", Reason: reason})
+				if err == nil {
+					wctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+					_ = c.ws.Write(wctx, websocket.MessageText, msg)
+					cancel()
+				}
+				_ = c.ws.Close(websocket.StatusPolicyViolation, reason)
+			} else {
+				_ = c.ws.Close(websocket.StatusNormalClosure, reason)
 			}
-			_ = c.ws.Close(websocket.StatusPolicyViolation, reason)
-		} else {
-			_ = c.ws.Close(websocket.StatusNormalClosure, reason)
 		}
 		close(c.send)
 	})
