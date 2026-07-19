@@ -1,8 +1,9 @@
 module github.com/anuwatthisuka/tether
 
-go 1.22
+go 1.23
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/jackc/pglogrepl v0.0.0-20240307033717-828fbfe908e9
 	github.com/jackc/pgx/v5 v5.7.4
 )

@@ -164,7 +164,7 @@ covered by a test, it isn't in this README.
 - [x] WAL ingest, LSN checkpointing, resume after restart
 - [x] Single-table shapes with auth-bound filters
 - [x] Gapless initial snapshot handoff to live stream
-- [ ] WebSocket transport with offset-based resume
+- [x] WebSocket transport with offset-based resume
 - [ ] Server-authoritative mutations with idempotency keys
 - [ ] Slot lag guard and schema-drift halt
 

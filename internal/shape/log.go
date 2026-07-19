@@ -79,11 +79,45 @@ func (l *Log) Events() []Event {
 	return out
 }
 
+// After returns events with Offset strictly greater than offset.
+// ok is false when the log cannot satisfy resume (empty, or offset before
+// the first retained event — client must resnapshot).
+func (l *Log) After(offset int64) (events []Event, ok bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.events) == 0 {
+		if offset == 0 {
+			return nil, true
+		}
+		return nil, false
+	}
+	first := l.events[0].Offset
+	if offset > 0 && offset < first-1 {
+		return nil, false
+	}
+	for _, ev := range l.events {
+		if ev.Offset > offset {
+			events = append(events, ev)
+		}
+	}
+	return events, true
+}
+
 // Len returns the number of events.
 func (l *Log) Len() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return len(l.events)
+}
+
+// LastOffset returns the newest offset, or 0 if empty.
+func (l *Log) LastOffset() int64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.events) == 0 {
+		return 0
+	}
+	return l.events[len(l.events)-1].Offset
 }
 
 func cloneRow(row map[string]any) map[string]any {
