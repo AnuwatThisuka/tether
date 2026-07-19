@@ -43,8 +43,9 @@ func TestSlotLag_ForcesResnapshot(t *testing.T) {
 		tether.WithClaimsKey(func(c tether.Claims) string { return fmt.Sprint(c) }),
 		tether.WithSlotName(slot),
 		tether.WithPublication(pub),
-		tether.MaxSlotLag(1024),
-		tether.MaxClientIdle(0), // disable for this test
+		// High enough that setup WAL cannot trip the guard; override forces one trip.
+		tether.MaxSlotLag(1<<62),
+		tether.MaxClientIdle(0),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +97,7 @@ CREATE TABLE public.%s (
 	var tripped atomic.Bool
 	eng.SetSlotLagOverrideForTest(func(context.Context) (int64, error) {
 		if tripped.CompareAndSwap(false, true) {
-			return 1 << 30, nil
+			return 1<<62 + 1, nil
 		}
 		return 0, nil
 	})

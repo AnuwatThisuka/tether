@@ -157,6 +157,8 @@ The bar this project holds itself to, run in CI on every commit:
 Every release states which parts of this test pass. If a claim isn't
 covered by a test, it isn't in this README.
 
+Covered by `TestConvergence` in `internal/e2e` (`make test-integration`).
+
 ---
 
 ## Roadmap
@@ -169,6 +171,7 @@ covered by a test, it isn't in this README.
 - [x] WebSocket transport with offset-based resume
 - [x] Server-authoritative mutations with idempotency keys
 - [x] Slot lag guard and schema-drift halt
+- [x] Correctness / convergence (`TestConvergence`)
 
 **v0.2 — operability**
 

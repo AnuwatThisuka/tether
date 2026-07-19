@@ -7,7 +7,7 @@ test:
 
 # Requires Docker. db-check asserts wal_level=logical; Go tests use -tags=integration.
 test-integration: db-check
-	TETHER_TEST_DSN='$(TETHER_TEST_DSN)' go test -tags=integration ./...
+	TETHER_TEST_DSN='$(TETHER_TEST_DSN)' go test -race -tags=integration ./...
 
 lint:
 	@command -v golangci-lint >/dev/null || { echo 'golangci-lint not found; see https://golangci-lint.run/welcome/install/'; exit 1; }

@@ -6,6 +6,9 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Headline e2e convergence test (`internal/e2e.TestConvergence`): two offline
+  clients, kill mid-write + cold restart, idempotent replay, identical final
+  snapshots vs Postgres (`make test-integration` runs under `-race`).
 - Slot lag guard (`MaxSlotLag`, default 2 GiB) and idle client sweep
   (`MaxClientIdle`, default 24h). Exceeding lag drops the replication slot,
   broadcasts `must_resnapshot`, clears in-memory streams, and recreates the

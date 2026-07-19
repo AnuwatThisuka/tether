@@ -98,16 +98,17 @@ type Engine struct {
 	sessions map[string]*session
 
 	// slotLagOverride, when set (tests), replaces wal.SlotLagBytes.
+	slotLagMu       sync.RWMutex
 	slotLagOverride func(context.Context) (int64, error)
 }
 
 type session struct {
 	conn   *transport.Conn
 	claims Claims
-	resume map[string]int64
-	shapes map[string]struct{}
 
 	mu         sync.Mutex
+	resume     map[string]int64
+	shapes     map[string]struct{}
 	lastActive time.Time
 }
 
@@ -121,6 +122,38 @@ func (s *session) isIdle(cutoff time.Time) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.lastActive.Before(cutoff)
+}
+
+func (s *session) setResume(r map[string]int64) {
+	s.mu.Lock()
+	s.resume = r
+	s.mu.Unlock()
+}
+
+func (s *session) resumeAt(shapeName string) int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.resume[shapeName]
+}
+
+func (s *session) addShape(name string) {
+	s.mu.Lock()
+	s.shapes[name] = struct{}{}
+	s.mu.Unlock()
+}
+
+func (s *session) hasShape(name string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.shapes[name]
+	return ok
+}
+
+func (s *session) clearMembership() {
+	s.mu.Lock()
+	s.shapes = make(map[string]struct{})
+	s.resume = make(map[string]int64)
+	s.mu.Unlock()
 }
 
 // New constructs an Engine.
@@ -246,7 +279,7 @@ func (e *Engine) serveWS(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if msg.Resume != nil {
-				sess.resume = msg.Resume
+				sess.setResume(msg.Resume)
 			}
 		case "subscribe":
 			var msg proto.Subscribe
@@ -332,14 +365,14 @@ func (e *Engine) handleSubscribe(ctx context.Context, sess *session, names []str
 		if err := e.subscribeShape(ctx, sess, def); err != nil {
 			return err
 		}
-		sess.shapes[name] = struct{}{}
+		sess.addShape(name)
 	}
 	return nil
 }
 
 func (e *Engine) subscribeShape(ctx context.Context, sess *session, def shape.Definition) error {
 	key := streamKey(def.Name, e.opts.claimsKey(sess.claims))
-	resumeAt := sess.resume[def.Name]
+	resumeAt := sess.resumeAt(def.Name)
 
 	e.mu.Lock()
 	inst, exists := e.streams[key]
@@ -622,8 +655,11 @@ func (e *Engine) runConsumerCycle(
 }
 
 func (e *Engine) slotLagBytes(ctx context.Context) (int64, error) {
-	if e.slotLagOverride != nil {
-		return e.slotLagOverride(ctx)
+	e.slotLagMu.RLock()
+	fn := e.slotLagOverride
+	e.slotLagMu.RUnlock()
+	if fn != nil {
+		return fn(ctx)
 	}
 	return wal.SlotLagBytes(ctx, e.pool, e.opts.slotName)
 }
@@ -634,8 +670,7 @@ func (e *Engine) handleSlotLagExceeded(ctx context.Context, lastID *int64) error
 	e.mu.Lock()
 	e.streams = make(map[string]*shape.Instance)
 	for _, s := range e.sessions {
-		s.shapes = make(map[string]struct{})
-		s.resume = make(map[string]int64)
+		s.clearMembership()
 	}
 	e.mu.Unlock()
 
@@ -773,7 +808,7 @@ func (e *Engine) dispatchChange(ctx context.Context, ch wal.Change) {
 			e.log.Error("shape apply", "shape", shapeName, "err", err)
 			if errors.Is(err, shape.ErrSchemaDrift) || errors.Is(err, shape.ErrHalted) {
 				for _, s := range sessions {
-					if _, ok := s.shapes[shapeName]; ok {
+					if s.hasShape(shapeName) {
 						e.sendErr(s.conn, proto.CodeHalted, err.Error(), shapeName)
 					}
 				}
@@ -787,7 +822,7 @@ func (e *Engine) dispatchChange(ctx context.Context, ch wal.Change) {
 
 	for _, s := range sessions {
 		for _, r := range results {
-			if _, ok := s.shapes[r.shapeName]; !ok {
+			if !s.hasShape(r.shapeName) {
 				continue
 			}
 			for _, ev := range r.events {
