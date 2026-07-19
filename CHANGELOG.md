@@ -2,7 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
+(see [VERSIONING.md](./VERSIONING.md)).
+
 ## Unreleased
+
+## [0.1.0] - 2026-07-19
 
 ### Added
 
@@ -32,3 +38,4 @@ All notable changes to this project are documented in this file.
 - Dependencies: `jackc/pgx/v5`, `jackc/pglogrepl`, `coder/websocket`.
 - Repository scaffolding: Go module, package placeholders, Makefile, and
   Docker Postgres for integration tests.
+- Library SemVer via `tether.Version` and [VERSIONING.md](./VERSIONING.md).

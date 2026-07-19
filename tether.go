@@ -1,3 +1,4 @@
+// Package tether is a Postgres sync engine embedded in a Go HTTP server.
 package tether
 
 import (

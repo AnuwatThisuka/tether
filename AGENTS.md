@@ -151,6 +151,13 @@ Do not implement these, and do not add abstractions in anticipation of
 them. If a task appears to require one, say so and stop — the answer is
 usually that the task should be scoped differently.
 
+## Versioning
+
+Semantic Versioning 2.0.0 — see [`VERSIONING.md`](./VERSIONING.md).
+`tether.Version` must match the release. Git tags are `vMAJOR.MINOR.PATCH`.
+Root-package changes need a `CHANGELOG.md` entry under `Unreleased` (or the
+release section when cutting a version).
+
 ## Pull requests
 
 - One concern per PR.
@@ -158,3 +165,5 @@ usually that the task should be scoped differently.
 - Changes to the root package need a changelog entry.
 - Say plainly if something is untested. An honest gap is fine; an implied
   guarantee that does not exist is not.
+- Breaking public API while MAJOR is 0 → MINOR bump at release time (not
+  silently in a drive-by). After 1.0.0 → MAJOR.

@@ -20,9 +20,9 @@ mux.Handle("/sync", engine.Handler())
 
 That's the whole integration.
 
-> **Status: pre-alpha.** The protocol is unstable and the API will change
-> without notice. Not ready for production. See [Roadmap](#roadmap) for what
-> works today.
+> **Status: v0.1.0** (Semantic Versioning — see [VERSIONING.md](./VERSIONING.md)).
+> MAJOR is still `0`: the public API may change. Not production-hardened.
+> See [Roadmap](#roadmap) for what is covered by tests today.
 
 ---
 
@@ -216,3 +216,7 @@ reproduction. Correctness issues take priority over features.
 ## License
 
 Apache-2.0
+
+## Versioning
+
+[Semantic Versioning](./VERSIONING.md). Current: `tether.Version` → **0.1.0**.
