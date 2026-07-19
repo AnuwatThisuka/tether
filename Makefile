@@ -1,6 +1,6 @@
 TETHER_TEST_DSN ?= postgres://tether:tether@localhost:54321/tether?replication=database
 
-.PHONY: test test-integration lint fmt db-up db-down db-check
+.PHONY: test test-integration lint fmt db-up db-down db-check bench
 
 test:
 	go test ./...
@@ -8,6 +8,10 @@ test:
 # Requires Docker. db-check asserts wal_level=logical; Go tests use -tags=integration.
 test-integration: db-check
 	TETHER_TEST_DSN='$(TETHER_TEST_DSN)' go test -race -tags=integration ./...
+
+# End-to-end insert→WebSocket microbench. Requires db-up + TETHER_TEST_DSN.
+bench: db-check
+	TETHER_TEST_DSN='$(TETHER_TEST_DSN)' go run ./cmd/bench $(BENCH_ARGS)
 
 lint:
 	@command -v golangci-lint >/dev/null || { echo 'golangci-lint not found; see https://golangci-lint.run/welcome/install/'; exit 1; }

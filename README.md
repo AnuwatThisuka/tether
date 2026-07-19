@@ -223,3 +223,8 @@ reproduction. Correctness issues take priority over features.
 ## Versioning
 
 [Semantic Versioning](./VERSIONING.md). Current: `tether.Version` → **0.2.0**.
+
+## Benchmarking
+
+Tether-only insert→WebSocket microbench: [`docs/benchmark.md`](./docs/benchmark.md)
+(`make bench`). Not a fair bake-off against Electric/PowerSync/Zero.

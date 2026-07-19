@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- `cmd/bench` + `make bench`: insert→WebSocket throughput and shape lag
+  (p50/p99). Fairness notes vs peers in [`docs/benchmark.md`](./docs/benchmark.md).
+
 ## [0.2.0] - 2026-07-19
 
 ### Added
