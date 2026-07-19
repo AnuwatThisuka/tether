@@ -1,10 +1,12 @@
 // Command bench measures tether end-to-end insert → WebSocket shape delivery.
 //
+// Phase B: commit-aligned lag (wall clock after Commit/CopyFrom returns),
+// p50/p95/p99, and optional batched inserts (-batch).
+//
 //	make db-up
 //	export TETHER_TEST_DSN='postgres://tether:tether@localhost:54321/tether?replication=database'
-//	make bench
+//	make bench-lag
 //
-// This is a tether microbench, not a fair bake-off against Electric/PowerSync/Zero.
 // See docs/benchmark.md.
 package main
 
@@ -24,6 +26,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/anuwatthisuka/tether"
@@ -35,16 +38,17 @@ func main() {
 	dsn := flag.String("dsn", envOr("TETHER_TEST_DSN", ""), "Postgres DSN (replication=database ok)")
 	rowsN := flag.Int("rows", 5_000, "number of inserts after warmup")
 	clientsN := flag.Int("clients", 1, "concurrent WebSocket subscribers")
-	warmup := flag.Int("warmup", 100, "warmup inserts discarded from stats")
+	warmup := flag.Int("warmup", 100, "warmup inserts discarded from lag stats")
 	buffer := flag.Int("buffer", 256, "per-client outbound buffer")
+	batch := flag.Int("batch", 1, "rows per commit (1=single INSERT; >1 uses COPY)")
 	flag.Parse()
 
 	if *dsn == "" {
 		fmt.Fprintln(os.Stderr, "bench: -dsn or TETHER_TEST_DSN required (make db-up first)")
 		os.Exit(2)
 	}
-	if *rowsN <= 0 || *clientsN <= 0 {
-		fmt.Fprintln(os.Stderr, "bench: -rows and -clients must be > 0")
+	if *rowsN <= 0 || *clientsN <= 0 || *batch <= 0 {
+		fmt.Fprintln(os.Stderr, "bench: -rows, -clients, -batch must be > 0")
 		os.Exit(2)
 	}
 
@@ -68,7 +72,7 @@ func main() {
 CREATE TABLE public.%s (
 	id INT PRIMARY KEY,
 	org_id INT NOT NULL,
-	sent_ns BIGINT NOT NULL
+	pad TEXT NOT NULL DEFAULT ''
 )`, table)); err != nil {
 		fail(err)
 	}
@@ -109,8 +113,10 @@ CREATE TABLE public.%s (
 	srv := httptest.NewServer(eng.Handler())
 	defer srv.Close()
 
-	totalNeed := int64((*warmup + *rowsN) * *clientsN)
+	totalRows := *warmup + *rowsN
+	totalNeed := int64(totalRows * *clientsN)
 	var received atomic.Int64
+	var commitAt sync.Map // id(int) -> commit unix nano (after Commit returns)
 	var lagMu sync.Mutex
 	var samples []time.Duration
 
@@ -119,27 +125,23 @@ CREATE TABLE public.%s (
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := runClient(ctx, srv.URL, table, *warmup, &lagMu, &samples, &received); err != nil {
+			if err := runClient(ctx, srv.URL, table, *warmup, &commitAt, &lagMu, &samples, &received); err != nil {
 				fmt.Fprintln(os.Stderr, "bench client:", err)
 			}
 		}()
 	}
 	time.Sleep(300 * time.Millisecond)
 
-	fmt.Printf("bench: table=%s clients=%d warmup=%d rows=%d\n", table, *clientsN, *warmup, *rowsN)
+	fmt.Printf("bench: table=%s clients=%d warmup=%d rows=%d batch=%d\n",
+		table, *clientsN, *warmup, *rowsN, *batch)
 
 	start := time.Now()
-	for i := 1; i <= *warmup+*rowsN; i++ {
-		sent := time.Now().UnixNano()
-		if _, err := pool.Exec(ctx, fmt.Sprintf(
-			`INSERT INTO public.%s (id, org_id, sent_ns) VALUES ($1, 1, $2)`, table,
-		), i, sent); err != nil {
-			fail(err)
-		}
+	if err := insertRows(ctx, pool, table, totalRows, *batch, &commitAt); err != nil {
+		fail(err)
 	}
 	insertDone := time.Since(start)
 
-	deadline := time.Now().Add(2 * time.Minute)
+	deadline := time.Now().Add(3 * time.Minute)
 	for received.Load() < totalNeed && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -166,27 +168,71 @@ CREATE TABLE public.%s (
 
 	got := received.Load()
 	fmt.Printf("received: %d / %d (clients×rows including warmup)\n", got, totalNeed)
-	fmt.Printf("insert_wall: %s (%.0f rows/s insert-only)\n",
-		insertDone.Round(time.Millisecond), float64(*warmup+*rowsN)/insertDone.Seconds())
+	fmt.Printf("insert_wall: %s (%.0f rows/s commit throughput)\n",
+		insertDone.Round(time.Millisecond), float64(totalRows)/insertDone.Seconds())
 	fmt.Printf("e2e_wall:    %s (%.0f rows/s insert→all clients)\n",
-		wall.Round(time.Millisecond), float64(*warmup+*rowsN)/wall.Seconds())
+		wall.Round(time.Millisecond), float64(totalRows)/wall.Seconds())
 	if len(out) == 0 {
-		fmt.Println("lag: no measured samples (clients may have failed)")
+		fmt.Println("commit_to_client_lag: no samples (clients may have failed)")
 		os.Exit(1)
 	}
 	fmt.Printf(
-		"shape_lag:   n=%d p50=%s p99=%s max=%s\n",
+		"commit_to_client_lag: n=%d p50=%s p95=%s p99=%s max=%s\n",
 		len(out),
 		percentile(out, 50).Round(time.Microsecond),
+		percentile(out, 95).Round(time.Microsecond),
 		percentile(out, 99).Round(time.Microsecond),
 		out[len(out)-1].Round(time.Microsecond),
 	)
+	fmt.Println("note: lag = WS recv − wall clock when INSERT/COPY commit returned (durable from client POV)")
 	if got < totalNeed {
 		os.Exit(1)
 	}
 }
 
-func runClient(ctx context.Context, baseURL, shape string, warmup int, lagMu *sync.Mutex, samples *[]time.Duration, received *atomic.Int64) error {
+func insertRows(ctx context.Context, pool *pgxpool.Pool, table string, total, batch int, commitAt *sync.Map) error {
+	if batch == 1 {
+		q := fmt.Sprintf(`INSERT INTO public.%s (id, org_id, pad) VALUES ($1, 1, '')`, table)
+		for id := 1; id <= total; id++ {
+			if _, err := pool.Exec(ctx, q, id); err != nil {
+				return err
+			}
+			commitAt.Store(id, time.Now().UnixNano())
+		}
+		return nil
+	}
+
+	for id := 1; id <= total; {
+		end := id + batch - 1
+		if end > total {
+			end = total
+		}
+		rows := make([][]any, 0, end-id+1)
+		for i := id; i <= end; i++ {
+			rows = append(rows, []any{i, 1, ""})
+		}
+		_, err := pool.CopyFrom(ctx, pgx.Identifier{"public", table}, []string{"id", "org_id", "pad"}, pgx.CopyFromRows(rows))
+		if err != nil {
+			return fmt.Errorf("copy %d-%d: %w", id, end, err)
+		}
+		ns := time.Now().UnixNano()
+		for i := id; i <= end; i++ {
+			commitAt.Store(i, ns)
+		}
+		id = end + 1
+	}
+	return nil
+}
+
+func runClient(
+	ctx context.Context,
+	baseURL, shape string,
+	warmup int,
+	commitAt *sync.Map,
+	lagMu *sync.Mutex,
+	samples *[]time.Duration,
+	received *atomic.Int64,
+) error {
 	wsURL := "ws" + baseURL[len("http"):]
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	if err != nil {
@@ -221,12 +267,14 @@ func runClient(ctx context.Context, baseURL, shape string, warmup int, lagMu *sy
 				continue
 			}
 			recv := time.Now()
-			id := intFrom(ch.Row["id"])
-			sentNs := int64From(ch.Row["sent_ns"])
-			if id > warmup && sentNs > 0 {
-				lagMu.Lock()
-				*samples = append(*samples, recv.Sub(time.Unix(0, sentNs)))
-				lagMu.Unlock()
+			rowID := intFrom(ch.Row["id"])
+			if rowID > warmup {
+				if v, ok := commitAt.Load(rowID); ok {
+					commitNs := v.(int64)
+					lagMu.Lock()
+					*samples = append(*samples, recv.Sub(time.Unix(0, commitNs)))
+					lagMu.Unlock()
+				}
 			}
 			received.Add(1)
 		case "bye", "error":
@@ -245,11 +293,15 @@ func percentile(sorted []time.Duration, p int) time.Duration {
 	if p >= 100 {
 		return sorted[len(sorted)-1]
 	}
-	idx := (p * len(sorted)) / 100
-	if idx >= len(sorted) {
-		idx = len(sorted) - 1
+	// Nearest-rank: ceil(p/100 * n) - 1
+	idx := (p*len(sorted) + 99) / 100
+	if idx < 1 {
+		idx = 1
 	}
-	return sorted[idx]
+	if idx > len(sorted) {
+		idx = len(sorted)
+	}
+	return sorted[idx-1]
 }
 
 func writeJSON(ctx context.Context, conn *websocket.Conn, v any) error {
@@ -295,26 +347,6 @@ func intFrom(v any) int {
 		return x
 	default:
 		var n int
-		_, _ = fmt.Sscan(fmt.Sprint(v), &n)
-		return n
-	}
-}
-
-func int64From(v any) int64 {
-	switch x := v.(type) {
-	case float64:
-		return int64(x)
-	case int64:
-		return x
-	case int32:
-		return int64(x)
-	case int:
-		return int64(x)
-	case json.Number:
-		n, _ := x.Int64()
-		return n
-	default:
-		var n int64
 		_, _ = fmt.Sscan(fmt.Sprint(v), &n)
 		return n
 	}
