@@ -20,6 +20,19 @@ and clearer embedder guidance for `WithClientBuffer`.
 - [x] Commit
 - [ ] Move to `plans/done/` on release
 
+## Decision Log
+
+- Decision: Extend `Metrics` with `ClientDisconnected(reason string)` rather
+  than separate slow/idle methods.
+  Rationale: One sink method; reasons already exist (`slow_client`,
+  `idle_client`). Still Unreleased for v0.2.0 — interface growth is OK.
+  Date/Author: 2026-07-19
+
+- Decision: Do not add adaptive buffer resizing in this slice.
+  Rationale: Invariant 7 is already correct; tuning is host-side via
+  `WithClientBuffer`. Metrics + docs are enough for v0.2.
+  Date/Author: 2026-07-19
+
 ## Outcomes & Retrospective
 
 Slice 2 accepted:
