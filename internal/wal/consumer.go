@@ -225,7 +225,7 @@ func (c *Consumer) decodeInsert(m *pglogrepl.InsertMessage) (Change, error) {
 	return Change{
 		Schema:              rel.Namespace,
 		Table:               rel.Relation,
-		Op:                  opInsert,
+		Op:                  OpInsert,
 		RelationFingerprint: rel.Fingerprint,
 		New:                 neu,
 	}, nil
@@ -247,7 +247,7 @@ func (c *Consumer) decodeUpdate(m *pglogrepl.UpdateMessage) (Change, error) {
 	return Change{
 		Schema:              rel.Namespace,
 		Table:               rel.Relation,
-		Op:                  opUpdate,
+		Op:                  OpUpdate,
 		RelationFingerprint: rel.Fingerprint,
 		Old:                 oldRow,
 		New:                 newRow,
@@ -266,7 +266,7 @@ func (c *Consumer) decodeDelete(m *pglogrepl.DeleteMessage) (Change, error) {
 	return Change{
 		Schema:              rel.Namespace,
 		Table:               rel.Relation,
-		Op:                  opDelete,
+		Op:                  OpDelete,
 		RelationFingerprint: rel.Fingerprint,
 		Old:                 oldRow,
 	}, nil

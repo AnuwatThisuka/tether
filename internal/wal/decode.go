@@ -8,19 +8,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type changeOp string
+// Op is a decoded WAL row operation.
+type Op string
 
 const (
-	opInsert changeOp = "insert"
-	opUpdate changeOp = "update"
-	opDelete changeOp = "delete"
+	OpInsert Op = "insert"
+	OpUpdate Op = "update"
+	OpDelete Op = "delete"
 )
 
 // Change is one row mutation decoded from pgoutput, ready to persist.
 type Change struct {
 	Schema              string
 	Table               string
-	Op                  changeOp
+	Op                  Op
 	RelationFingerprint string
 	// Old/New omit columns that were not present in the WAL message
 	// (partial UPDATE / TOAST unchanged-marker). Absent ≠ JSON null.

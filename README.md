@@ -162,7 +162,7 @@ covered by a test, it isn't in this README.
 **v0.1 — correctness**
 
 - [x] WAL ingest, LSN checkpointing, resume after restart
-- [ ] Single-table shapes with auth-bound filters
+- [x] Single-table shapes with auth-bound filters
 - [ ] Gapless initial snapshot handoff to live stream
 - [ ] WebSocket transport with offset-based resume
 - [ ] Server-authoritative mutations with idempotency keys
