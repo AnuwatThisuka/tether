@@ -4,11 +4,11 @@ package tether_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,7 +91,9 @@ CREATE TABLE public.%s (
 	srv := httptest.NewServer(eng.Handler())
 	defer srv.Close()
 
-	// Connect and subscribe, then stop reading so the buffer fills.
+	// Connect and subscribe, then stop reading so the outbound buffer fills.
+	// Do not Read again in the wait loop — draining the socket relieves
+	// backpressure and races past slow_client on fast CI hosts.
 	wsURL := "ws" + srv.URL[len("http"):]
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	if err != nil {
@@ -100,18 +102,22 @@ CREATE TABLE public.%s (
 	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
 	writeJSON(t, ctx, conn, proto.Hello{Type: "hello", Protocol: proto.ProtocolVersion})
 	writeJSON(t, ctx, conn, proto.Subscribe{Type: "subscribe", Shapes: []string{table}})
-	// Drain snapshot once so membership is live, then stop consuming.
-	_ = readTyped(t, ctx, conn, &proto.Change{})
+	if typ := readTyped(t, ctx, conn, &proto.Change{}); typ != "snapshot" {
+		t.Fatalf("want snapshot after subscribe, got %q", typ)
+	}
 
-	for i := 0; i < 40; i++ {
+	// Large rows fill the peer TCP window so WritePump blocks and the
+	// 1-slot enqueue buffer trips Invariant 7 (small JSON often never does).
+	pad := strings.Repeat("x", 256*1024)
+	for i := 0; i < 32; i++ {
 		if _, err := pool.Exec(ctx, fmt.Sprintf(
 			`INSERT INTO public.%s (id, org_id, title) VALUES ($1, 1, $2)`, table,
-		), i+1, fmt.Sprintf("row-%d", i)); err != nil {
+		), i+1, pad); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		rec.mu.Lock()
 		for _, r := range rec.disc {
@@ -121,21 +127,6 @@ CREATE TABLE public.%s (
 			}
 		}
 		rec.mu.Unlock()
-		// Best-effort read so we notice socket close; ignore body.
-		rctx, rcancel := context.WithTimeout(ctx, 100*time.Millisecond)
-		_, data, err := conn.Read(rctx)
-		rcancel()
-		if err == nil {
-			var env struct {
-				Type   string `json:"type"`
-				Reason string `json:"reason"`
-			}
-			_ = json.Unmarshal(data, &env)
-			if env.Type == "bye" && env.Reason == proto.ReasonSlowClient {
-				// Wait briefly for metric emit (same call path as bye).
-				time.Sleep(50 * time.Millisecond)
-			}
-		}
 		time.Sleep(20 * time.Millisecond)
 	}
 	rec.mu.Lock()
