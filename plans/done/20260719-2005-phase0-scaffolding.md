@@ -30,7 +30,7 @@ _(none remaining — module path resolved in Decision Log before implementation.
 - [x] (2026-07-19 20:10+07) Add golangci-lint and gofumpt config; root smoke test + integration DSN probe.
 - [x] (2026-07-19 20:10+07) Update `IMPLEMENT_PLAN.md` open-decision row for module path to Done.
 - [x] (2026-07-19 20:12+07) Validate acceptance criteria; fill Outcomes & Retrospective.
-- [ ] Move plan to `plans/done/` when PR lands.
+- [x] Move plan to `plans/done/` when PR lands.
 
 ## Surprises & Discoveries
 

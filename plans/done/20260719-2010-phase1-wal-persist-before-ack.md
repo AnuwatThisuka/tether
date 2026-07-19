@@ -38,7 +38,7 @@ _(none blocking — durability backend and publication strategy decided below.)_
 - [x] (2026-07-19 20:20+07) Unit tests for TOAST unchanged-marker omission + fingerprint drift.
 - [x] (2026-07-19 20:25+07) Integration: ingest, restart resume, persist-before-ack crash-replay, schema drift.
 - [x] (2026-07-19 20:25+07) Update `IMPLEMENT_PLAN.md` open decisions; `CHANGELOG.md`; close Outcomes.
-- [ ] Move plan to `plans/done/` when PR lands.
+- [x] Move plan to `plans/done/` when PR lands.
 
 ## Surprises & Discoveries
 

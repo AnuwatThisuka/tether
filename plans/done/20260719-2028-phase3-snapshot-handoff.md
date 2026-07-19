@@ -23,7 +23,7 @@ A new subscriber must receive a consistent table snapshot at WAL LSN _N_, then l
 - [x] (2026-07-19 20:35+07) `Instance.LoadSnapshot` + skip `CommitLSN <= snapshotLSN` in Apply.
 - [x] (2026-07-19 20:35+07) `TestSnapshotStreamHandoff` integration.
 - [x] (2026-07-19 20:35+07) CHANGELOG / README / Outcomes; commit.
-- [ ] Move plan to `plans/done/` when PR lands.
+- [x] Move plan to `plans/done/` when PR lands.
 
 ## Surprises & Discoveries
 

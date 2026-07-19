@@ -30,7 +30,7 @@ _(none blocking)_
 - [x] (2026-07-19 20:30+07) Public `Claims`, `Filter`, `Where`, `Engine.Shape`, `New` succeeds for registration.
 - [x] (2026-07-19 20:30+07) Integration: org isolation; unit: boundary delete+insert.
 - [x] (2026-07-19 20:30+07) CHANGELOG / README checkbox / Outcomes; commit.
-- [ ] Move plan to `plans/done/` when PR lands.
+- [x] Move plan to `plans/done/` when PR lands.
 
 ## Surprises & Discoveries
 
