@@ -167,13 +167,13 @@ Covered by `TestConvergence` in `internal/e2e` (`make test-integration`).
 
 **v0.1 — correctness**
 
-- [x] WAL ingest, LSN checkpointing, resume after restart
-- [x] Single-table shapes with auth-bound filters
-- [x] Gapless initial snapshot handoff to live stream
-- [x] WebSocket transport with offset-based resume
-- [x] Server-authoritative mutations with idempotency keys
-- [x] Slot lag guard and schema-drift halt
-- [x] Correctness / convergence (`TestConvergence`)
+- [x] WAL ingest, LSN checkpointing, resume after restart — `TestPersistBeforeAck_CrashReplay`, `TestRestartResumesWithoutGap`
+- [x] Single-table shapes with auth-bound filters — `TestShapeFilterIsolation`
+- [x] Gapless initial snapshot handoff to live stream — `TestSnapshotStreamHandoff`
+- [x] WebSocket transport with offset-based resume — `TestWebSocketResume`
+- [x] Server-authoritative mutations with idempotency keys — `TestMutationIdempotentAndVisible`, `TestApply_IdempotentByKey`
+- [x] Slot lag guard and schema-drift halt — `TestSlotLag_ForcesResnapshot`, `TestApply_SchemaDriftHalts`
+- [x] Correctness / convergence — `TestConvergence` (`internal/e2e`)
 
 **v0.2 — operability**
 

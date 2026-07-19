@@ -478,15 +478,15 @@ Rules from AGENTS.md:
 
 Minimum named integration coverage by v0.1 exit:
 
-1. `PersistBeforeAck` / crash replay
-2. `ShapeFilterIsolation` (auth claims)
-3. `SnapshotStreamHandoff` (exact row-set equality)
-4. `ResumeByOffset`
-5. `SlowClientDoesNotStallOthers`
-6. `MutationIdempotentByKey`
-7. `SlotLagDropsAndForcesResnapshot`
-8. `SchemaDriftHaltsShape`
-9. `Convergence` (headline)
+1. `TestPersistBeforeAck_CrashReplay` / crash replay
+2. `TestShapeFilterIsolation` (auth claims)
+3. `TestSnapshotStreamHandoff` (exact row-set equality)
+4. `TestWebSocketResume` (resume by offset)
+5. `TestEnqueue_FullBuffer` (slow client buffer; disconnect path)
+6. `TestApply_IdempotentByKey` / `TestMutationIdempotentAndVisible`
+7. `TestSlotLag_ForcesResnapshot` / `TestSlotLag_AbandonedSlotDropped`
+8. `TestApply_SchemaDriftHalts` / `TestSchemaDriftStopsConsumer`
+9. `TestConvergence` (headline)
 
 ---
 
@@ -535,16 +535,16 @@ Record outcomes here when decided:
 
 ## 13. Definition of done (v0.1)
 
-- [ ] Phases 0–7 acceptance criteria all green under CI with `-race`
-- [ ] All nine minimum integration tests named above exist and pass
-- [ ] README v0.1 checklist fully checked, each bullet linked to a test name
+- [x] Phases 0–7 acceptance criteria all green under CI with `-race`
+- [x] All nine minimum integration tests named above exist and pass
+- [x] README v0.1 checklist fully checked, each bullet linked to a test name
       in CI or docs
-- [ ] `AGENTS.md` Invariants 1–7 each cited by at least one test or explicit
+- [x] `AGENTS.md` Invariants 1–7 each cited by at least one test or explicit
       code-path comment + test
-- [ ] Direct deps still only `pgx`, `pglogrepl`, `websocket` (or approved
+- [x] Direct deps still only `pgx`, `pglogrepl`, `websocket` (or approved
       exceptions listed in CHANGELOG)
-- [ ] Public API documented in README matches `tether.go`; CHANGELOG current
-- [ ] No non-goal features merged "temporarily"
+- [x] Public API documented in README matches `tether.go`; CHANGELOG current
+- [x] No non-goal features merged "temporarily"
 
 ---
 
@@ -553,3 +553,4 @@ Record outcomes here when decided:
 | Date       | Change                                                      |
 | ---------- | ----------------------------------------------------------- |
 | 2026-07-19 | Initial master plan for greenfield tree (Phases 0–7 → v0.1) |
+| 2026-07-19 | v0.1.0 released; definition of done checked; CI added       |
