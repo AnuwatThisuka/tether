@@ -217,7 +217,7 @@ reproduction. Correctness issues take priority over features.
 
 ## License
 
-Apache-2.0
+[Apache License 2.0](./LICENSE)
 
 ## Versioning
 
