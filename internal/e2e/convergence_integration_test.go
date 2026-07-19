@@ -166,15 +166,21 @@ ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title`, table),
 	}
 
 	// 5. Fresh snapshots — clients must match each other and the table.
-	snapA := freshSnapshot(t, ctx, srv.URL, table)
-	snapB := freshSnapshot(t, ctx, srv.URL, table)
-	dbRows := loadDB(t, ctx, pool, table)
-
-	if !sameRows(snapA, snapB) {
-		t.Fatalf("clients diverged:\n  A=%v\n  B=%v", snapA, snapB)
-	}
-	if !sameRows(snapA, dbRows) {
-		t.Fatalf("clients != db:\n  clients=%v\n  db=%v", snapA, dbRows)
+	// Subscribe with resumeAt==0 reuses the in-memory Materialized stream, which
+	// can lag the table by a fan-out tick; poll until caught up or fail loudly.
+	var snapA, snapB, dbRows map[int]string
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		snapA = freshSnapshot(t, ctx, srv.URL, table)
+		snapB = freshSnapshot(t, ctx, srv.URL, table)
+		dbRows = loadDB(t, ctx, pool, table)
+		if sameRows(snapA, snapB) && sameRows(snapA, dbRows) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("clients != db after catch-up wait:\n  A=%v\n  B=%v\n  db=%v", snapA, snapB, dbRows)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 	for _, idWant := range []int{1, 2, 3} {
 		if _, ok := snapA[idWant]; !ok {

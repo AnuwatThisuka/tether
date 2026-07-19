@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Close` no longer holds the engine mutex across `pool.Close`, which deadlocked
+  with fan-out (`dispatchChange`) and made failing integration tests hang until
+  the default 10m `go test` timeout.
+- Serialize `Conn.Enqueue` with send-channel close so fan-out cannot race
+  client disconnect under `-race`.
 - Sample slot lag once per Run tick (metrics + lag guard) so one-shot lag
   overrides are not consumed before the guard; protect pool access in
   `slotLagBytes` / fan-out against `Close` races under `-race`.

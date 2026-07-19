@@ -933,11 +933,16 @@ func decodeJSONMap(b []byte) map[string]any {
 }
 
 // Close releases the database pool.
+//
+// Must not hold e.mu across pool.Close: fan-out borrows a pool conn then takes
+// e.mu in dispatchChange. Holding the mutex while Close waits for that conn
+// deadlocks until the caller (or go test) times out.
 func (e *Engine) Close() {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.pool != nil {
-		e.pool.Close()
-		e.pool = nil
+	pool := e.pool
+	e.pool = nil
+	e.mu.Unlock()
+	if pool != nil {
+		pool.Close()
 	}
 }

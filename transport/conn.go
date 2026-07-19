@@ -23,6 +23,9 @@ type Conn struct {
 	ws     *websocket.Conn
 	claims any
 	send   chan []byte
+	// sendMu serializes Enqueue with close(send) so fan-out cannot race
+	// shutdown under -race / panic on send-to-closed-channel.
+	sendMu sync.Mutex
 	closed atomic.Bool
 	once   sync.Once
 }
@@ -49,6 +52,11 @@ func (c *Conn) Claims() any { return c.claims }
 // Enqueue tries to buffer a message without blocking.
 // Returns false if the buffer is full or the conn is closed (Invariant 7).
 func (c *Conn) Enqueue(msg []byte) bool {
+	if c.closed.Load() {
+		return false
+	}
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
 	if c.closed.Load() {
 		return false
 	}
@@ -115,7 +123,9 @@ func (c *Conn) shutdown(ctx context.Context, reason string, bye bool) {
 				_ = c.ws.Close(websocket.StatusNormalClosure, reason)
 			}
 		}
+		c.sendMu.Lock()
 		close(c.send)
+		c.sendMu.Unlock()
 	})
 }
 
