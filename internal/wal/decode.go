@@ -23,6 +23,9 @@ type Change struct {
 	Table               string
 	Op                  Op
 	RelationFingerprint string
+	// CommitLSN is the source transaction's end LSN (set at Commit).
+	// Zero means "unknown" (do not use for handoff gating).
+	CommitLSN pglogrepl.LSN
 	// Old/New omit columns that were not present in the WAL message
 	// (partial UPDATE / TOAST unchanged-marker). Absent ≠ JSON null.
 	Old map[string]any

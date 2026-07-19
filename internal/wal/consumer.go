@@ -165,6 +165,9 @@ func (c *Consumer) Run(ctx context.Context) error {
 				if commitLSN == 0 {
 					commitLSN = m.CommitLSN
 				}
+				for i := range pending {
+					pending[i].CommitLSN = commitLSN
+				}
 				if err := c.persistAndAck(ctx, commitLSN, curXid, pending); err != nil {
 					return err
 				}

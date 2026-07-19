@@ -224,3 +224,41 @@ func numEqualFloat(a float64, b any) bool {
 		return fmt.Sprint(a) == fmt.Sprint(b)
 	}
 }
+
+// SQLClause renders the filter as a SQL boolean expression with $n placeholders
+// for use on a normal (non-replication) connection.
+func (f Filter) SQLClause() (string, []any, error) {
+	if len(f.preds) == 0 {
+		return "", nil, fmt.Errorf("shape: empty filter")
+	}
+	parts := make([]string, 0, len(f.preds))
+	args := make([]any, 0, len(f.preds))
+	argN := 1
+	for _, p := range f.preds {
+		if err := validateIdent(p.column); err != nil {
+			return "", nil, err
+		}
+		col := quoteIdent(p.column)
+		switch p.op {
+		case opEq:
+			parts = append(parts, fmt.Sprintf("%s = $%d", col, argN))
+			args = append(args, p.value)
+			argN++
+		case opNe:
+			parts = append(parts, fmt.Sprintf("%s <> $%d", col, argN))
+			args = append(args, p.value)
+			argN++
+		case opIsNull:
+			parts = append(parts, col+" IS NULL")
+		case opIsNotNull:
+			parts = append(parts, col+" IS NOT NULL")
+		default:
+			return "", nil, fmt.Errorf("shape: unknown predicate op")
+		}
+	}
+	return strings.Join(parts, " AND "), args, nil
+}
+
+func quoteIdent(ident string) string {
+	return `"` + strings.ReplaceAll(ident, `"`, `""`) + `"`
+}

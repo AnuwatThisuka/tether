@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/jackc/pglogrepl"
+
 	"github.com/anuwatthisuka/tether/internal/wal"
 )
 
@@ -32,6 +34,10 @@ type Instance struct {
 
 	mu          sync.Mutex
 	fingerprint string
+	// snapshotLSN is the handoff LSN from LoadSnapshot; Apply ignores
+	// changes with CommitLSN <= snapshotLSN (Invariant 4).
+	snapshotLSN pglogrepl.LSN
+	hasSnapshot bool
 	// rows currently in the shape, keyed by pkKey
 	cache map[string]map[string]any
 }
@@ -71,6 +77,13 @@ func (inst *Instance) Apply(ch wal.Change) ([]Event, error) {
 		return nil, nil
 	}
 
+	inst.mu.Lock()
+	if inst.hasSnapshot && ch.CommitLSN != 0 && ch.CommitLSN <= inst.snapshotLSN {
+		inst.mu.Unlock()
+		return nil, nil
+	}
+	inst.mu.Unlock()
+
 	if err := inst.checkFingerprint(ch.RelationFingerprint); err != nil {
 		inst.Log.Halt(err)
 		return nil, err
@@ -86,6 +99,57 @@ func (inst *Instance) Apply(ch wal.Change) ([]Event, error) {
 	default:
 		return nil, fmt.Errorf("shape: unknown wal op %q", ch.Op)
 	}
+}
+
+// LoadSnapshot seeds the shape from a consistent snapshot at lsn.
+// Subsequent Apply calls ignore changes with CommitLSN <= lsn (Invariant 4).
+func (inst *Instance) LoadSnapshot(lsn pglogrepl.LSN, rows []map[string]any) error {
+	if err := inst.Log.Err(); err != nil {
+		return fmt.Errorf("%w: %v", ErrHalted, err)
+	}
+	inst.mu.Lock()
+	inst.snapshotLSN = lsn
+	inst.hasSnapshot = true
+	inst.mu.Unlock()
+
+	for _, row := range rows {
+		ok, err := inst.Filter.Match(row)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		key, err := pkKey(inst.Def.PrimaryKey, row)
+		if err != nil {
+			return err
+		}
+		inst.mu.Lock()
+		inst.cache[key] = cloneRow(row)
+		inst.mu.Unlock()
+		if _, err := inst.Log.Append(EventInsert, inst.Def.Table, row); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SnapshotLSN returns the handoff LSN if LoadSnapshot was called.
+func (inst *Instance) SnapshotLSN() (pglogrepl.LSN, bool) {
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	return inst.snapshotLSN, inst.hasSnapshot
+}
+
+// Materialized returns a copy of rows currently in the shape cache.
+func (inst *Instance) Materialized() []map[string]any {
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	out := make([]map[string]any, 0, len(inst.cache))
+	for _, row := range inst.cache {
+		out = append(out, cloneRow(row))
+	}
+	return out
 }
 
 func tableMatch(def Definition, ch wal.Change) bool {

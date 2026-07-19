@@ -6,6 +6,9 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Gapless snapshot→stream handoff (`internal/snapshot`): REPEATABLE READ
+  snapshot at LSN _N_ on a normal pool; shape `LoadSnapshot` + Apply skips
+  `CommitLSN <= N` (Invariant 4).
 - Shapes with server-side filters (`Engine.Shape`, `Where`, `Claims`): per-claims
   membership, enter/leave on filter boundary, schema-fingerprint halt
   (Invariants 2 and 5). In-memory per-shape log for now.
